@@ -15,50 +15,65 @@ PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 MODE = os.environ.get("VIDEO_MODE", "Short")
 
-def generate_gemini_script(topic):
+def get_dynamic_model_url():
     """
-    Directly hits the Gemini API URL, bypassing the buggy Python library.
+    Dynamically finds a working model name associated with the API key.
+    This prevents '404 Not Found' errors by never guessing names.
     """
-    print(f"Asking Gemini about: {topic}...")
+    print("🔍 Scanning for available AI models...")
+    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    try:
+        response = requests.get(list_url)
+        if response.status_code == 200:
+            data = response.json()
+            # Look for any model that supports 'generateContent'
+            for model in data.get('models', []):
+                if "generateContent" in model.get('supportedGenerationMethods', []):
+                    model_name = model['name']
+                    print(f"✅ Found working model: {model_name}")
+                    # Construct the URL dynamically
+                    return f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={GEMINI_KEY}"
+            
+        print("⚠️ No specific models found in list. Trying generic fallback.")
+    except Exception as e:
+        print(f"⚠️ Model scan failed: {e}")
+
+    # Ultimate fallback if scanning fails (usually 'gemini-pro' works for legacy keys)
+    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
+
+def generate_gemini_script(topic):
+    print(f"Asking AI about: {topic}...")
+    
+    # Get the URL dynamically
+    url = get_dynamic_model_url()
     
     headers = {'Content-Type': 'application/json'}
-    
     prompt_text = f"""
     You are a horror narrator. Write a script for a {MODE} video about: '{topic}'.
     Rules:
     - No intro (Start immediately with a hook).
     - Scary, suspenseful tone.
     - Max 150 words.
-    - Do not include scene directions like [Intro] or *sound effects*, just the spoken text.
-    - Do not use markdown (no **bold** or # headers).
+    - Do not include scene directions like [Intro], just the spoken text.
+    - Plain text only.
     """
     
-    data = {
-        "contents": [{
-            "parts": [{"text": prompt_text}]
-        }]
-    }
+    data = { "contents": [{ "parts": [{"text": prompt_text}] }] }
     
     try:
         response = requests.post(url, headers=headers, json=data)
         
-        # Check if the key is wrong or quota is full
-        if response.status_code != 200:
-            print(f"❌ Gemini API Error: {response.status_code} - {response.text}")
-            # Fallback to a simpler model if Flash fails
-            print("Trying fallback model (Gemini Pro)...")
-            url_fallback = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
-            response = requests.post(url_fallback, headers=headers, json=data)
-            
         if response.status_code == 200:
             result = response.json()
-            # Extract text safely
-            script = result['candidates'][0]['content']['parts'][0]['text']
-            return script.replace("*", "").strip()
+            try:
+                script = result['candidates'][0]['content']['parts'][0]['text']
+                return script.replace("*", "").strip()
+            except (KeyError, IndexError):
+                print(f"❌ API returned unexpected structure: {response.text}")
+                return None
         else:
-            print("Both models failed.")
+            print(f"❌ Generation Error: {response.status_code} - {response.text}")
             return None
             
     except Exception as e:
@@ -71,7 +86,7 @@ async def main_pipeline():
         with open("topics.txt", "r") as f:
             topics = f.readlines()
         if not topics:
-            print("No topics left in topics.txt! Using fallback.")
+            print("No topics left! Using fallback.")
             current_topic = "The mystery of the dark forest" 
         else:
             current_topic = topics[0].strip()
@@ -79,23 +94,22 @@ async def main_pipeline():
         print("topics.txt not found! Using fallback.")
         current_topic = "The mystery of the deep ocean"
 
-    # 2. GENERATE SCRIPT (New Direct Method)
+    # 2. GENERATE SCRIPT
     script_text = generate_gemini_script(current_topic)
-    
     if not script_text:
-        print("CRITICAL: Could not generate script. Stopping.")
+        print("CRITICAL: Script generation failed.")
         return None, None, None
 
-    print("Script generated successfully.")
+    print("📜 Script generated successfully.")
     
-    # 3. GENERATE AUDIO (Edge TTS)
-    print("Generating Audio...")
+    # 3. GENERATE AUDIO
+    print("🎙️ Generating Audio...")
     voice = "en-US-ChristopherNeural"
     communicate = edge_tts.Communicate(script_text, voice)
     await communicate.save("voice.mp3")
     
-    # 4. GET VISUALS (Pexels)
-    print("Downloading Video...")
+    # 4. GET VISUALS
+    print("🎬 Downloading Video...")
     search_query = "scary dark mystery"
     headers = {"Authorization": PEXELS_KEY}
     orientation = 'portrait' if MODE == 'Short' else 'landscape'
@@ -109,11 +123,12 @@ async def main_pipeline():
         if video_data.get('videos'):
             for i, video in enumerate(video_data['videos']):
                 video_files = video['video_files']
-                # Pick a mid-quality video to save bandwidth
+                # Pick a mid-quality video
                 video_files.sort(key=lambda x: x['width'], reverse=True)
-                target_video = video_files[0]['link']
+                # Avoid massive 4k files to save memory
+                target_video = next((v for v in video_files if v['width'] <= 1920), video_files[0])
                 
-                v_content = requests.get(target_video).content
+                v_content = requests.get(target_video['link']).content
                 temp_name = f"temp_{i}.mp4"
                 with open(temp_name, "wb") as f:
                     f.write(v_content)
@@ -121,18 +136,15 @@ async def main_pipeline():
                 try:
                     clip = VideoFileClip(temp_name)
                     video_clips.append(clip)
-                except Exception as e:
-                    print(f"Skipping bad video file: {e}")
-    else:
-        print(f"Pexels Error: {r.text}")
-        return None, None, None
-
+                except Exception:
+                    pass
+    
     if not video_clips:
-        print("No valid video clips found!")
+        print("❌ No valid video clips found!")
         return None, None, None
 
     # 5. EDITING
-    print("Editing...")
+    print("✂️ Editing...")
     try:
         audio = AudioFileClip("voice.mp3")
         final_clips = []
@@ -143,8 +155,12 @@ async def main_pipeline():
                 if current_duration >= audio.duration: break
                 
                 if MODE == "Short":
+                    # Crop logic for Shorts
+                    w, h = clip.size
+                    if w > h: # Landscape to Portrait crop
+                        clip = clip.crop(x1=w/2 - h*(9/16)/2, width=h*(9/16), height=h)
                     clip = clip.resize(height=1920)
-                    clip = clip.crop(x1=1166.6/2 - 540, y1=0, width=1080, height=1920)
+                    clip = clip.resize(width=1080) # Force width just in case
                 else:
                     clip = clip.resize(height=1080)
 
@@ -161,19 +177,16 @@ async def main_pipeline():
         # Cleanup
         audio.close()
         for clip in video_clips: clip.close()
-        for i in range(len(video_clips)):
-            if os.path.exists(f"temp_{i}.mp4"): os.remove(f"temp_{i}.mp4")
             
         return output_file, current_topic, script_text
         
     except Exception as e:
-        print(f"Editing Failed: {e}")
+        print(f"❌ Editing Failed: {e}")
         return None, None, None
 
 def upload_to_youtube(file_path, title, description):
     if not file_path: return
-        
-    print("Uploading to YouTube...")
+    print("🚀 Uploading to YouTube...")
     try:
         creds_dict = json.loads(YOUTUBE_TOKEN_VAL)
         creds = Credentials.from_authorized_user_info(creds_dict)
@@ -185,7 +198,7 @@ def upload_to_youtube(file_path, title, description):
                 "snippet": {
                     "title": title[:100],
                     "description": description[:4500],
-                    "tags": ["shorts", "horror", "mystery", "scary"],
+                    "tags": ["shorts", "horror", "mystery"],
                     "categoryId": "24" 
                 },
                 "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
@@ -193,9 +206,9 @@ def upload_to_youtube(file_path, title, description):
             media_body=MediaFileUpload(file_path, chunksize=-1, resumable=True)
         )
         response = request.execute()
-        print(f"Uploaded! Video ID: {response.get('id')}")
+        print(f"✅ Uploaded! Video ID: {response.get('id')}")
     except Exception as e:
-        print(f"Upload failed: {str(e)}")
+        print(f"❌ Upload failed: {str(e)}")
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
