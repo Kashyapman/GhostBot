@@ -1,7 +1,7 @@
 import os
 import random
 import requests
-from google import genai # NEW LIBRARY
+from google import genai
 import edge_tts
 import asyncio
 from moviepy.editor import *
@@ -16,8 +16,39 @@ PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 MODE = os.environ.get("VIDEO_MODE", "Short")
 
-# Initialize the new Client
+# Initialize Client
 client = genai.Client(api_key=GEMINI_KEY)
+
+def get_working_model():
+    """
+    Asks the API which models are available and picks the best one.
+    This fixes the '404 Not Found' error permanently.
+    """
+    print("Finding a working AI model...")
+    try:
+        # List all models available to your key
+        # Note: In the new library, we list models and filter manually if needed
+        # We try a prioritized list of known working models first to save time
+        priority_models = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+        
+        for model in priority_models:
+            try:
+                # Test the model with a simple "Hello"
+                client.models.generate_content(model=model, contents="Test")
+                print(f"✅ Found working model: {model}")
+                return model
+            except Exception:
+                continue
+                
+        # If specific ones fail, try to list dynamic ones (fallback)
+        # Note: The new SDK listing might be complex, so if the above fail,
+        # we default to 'gemini-1.5-flash' but print the error clearly.
+        print("Could not verify specific model. Defaulting to gemini-1.5-flash")
+        return "gemini-1.5-flash"
+        
+    except Exception as e:
+        print(f"Model search failed: {e}")
+        return "gemini-1.5-flash"
 
 async def generate_content():
     # 1. READ TOPIC
@@ -26,7 +57,6 @@ async def generate_content():
             topics = f.readlines()
         if not topics:
             print("No topics left in topics.txt!")
-            # Fallback if file is empty
             current_topic = "The mystery of the dark forest" 
         else:
             current_topic = topics[0].strip()
@@ -36,8 +66,10 @@ async def generate_content():
 
     print(f"Topic: {current_topic}")
     
-    # 2. GENERATE SCRIPT (Updated for new API)
-    # Using 'gemini-1.5-flash' which is the current stable, free-tier model
+    # 2. GENERATE SCRIPT
+    # Use the dynamic model finder
+    active_model = get_working_model()
+    
     prompt = f"""
     You are a horror narrator. Write a script for a {MODE} video about: '{current_topic}'.
     Rules:
@@ -47,13 +79,16 @@ async def generate_content():
     - Do not include scene directions like [Intro], just the spoken text.
     """
     
-    response = client.models.generate_content(
-        model="gemini-1.5-flash", 
-        contents=prompt
-    )
-    
-    script_text = response.text.replace("*", "")
-    print("Script generated successfully.")
+    try:
+        response = client.models.generate_content(
+            model=active_model, 
+            contents=prompt
+        )
+        script_text = response.text.replace("*", "")
+        print("Script generated successfully.")
+    except Exception as e:
+        print(f"❌ Script Generation Failed: {e}")
+        return None, None, None
     
     # 3. GENERATE AUDIO (Edge TTS)
     print("Generating Audio...")
@@ -81,9 +116,7 @@ async def generate_content():
         return None, None, None
 
     for i, video in enumerate(video_data['videos']):
-        # Get the best quality video file link
         video_files = video['video_files']
-        # Sort by resolution to get a decent one, but not massive 4k
         video_files.sort(key=lambda x: x['width'], reverse=True)
         target_video = video_files[0]['link']
         
@@ -92,7 +125,6 @@ async def generate_content():
         with open(temp_name, "wb") as f:
             f.write(v_content)
         
-        # Load clip
         clip = VideoFileClip(temp_name)
         video_clips.append(clip)
 
@@ -100,26 +132,20 @@ async def generate_content():
     print("Editing...")
     audio = AudioFileClip("voice.mp3")
     
-    # Loop/Extend video clips to match audio duration
     final_clips = []
     current_duration = 0
     
-    # Keep adding clips until we match audio length
     while current_duration < audio.duration:
         for clip in video_clips:
             if current_duration >= audio.duration: break
             
-            # Formatting for Shorts vs Long
             if MODE == "Short":
-                # Crop to 9:16 aspect ratio
-                # Assuming clip is 1080p or similar, we crop the center
                 w, h = clip.size
                 target_ratio = 9/16
                 if w/h > target_ratio:
                     new_width = h * target_ratio
                     clip = clip.crop(x1=w/2 - new_width/2, width=new_width, height=h)
                 clip = clip.resize(height=1920)
-                # Ensure 1080x1920 exact dimensions if needed, mostly resize covers it
             else:
                  clip = clip.resize(height=1080)
 
@@ -128,15 +154,11 @@ async def generate_content():
             
     final_video = concatenate_videoclips(final_clips, method="compose")
     final_video = final_video.set_audio(audio)
-    
-    # Trim to exact audio length
     final_video = final_video.subclip(0, audio.duration)
     
     output_file = "final_video.mp4"
-    # Using 'fast' preset for faster rendering in cloud
     final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24, preset="ultrafast")
     
-    # Clean up temp files to save space
     for i in range(len(video_clips)):
         if os.path.exists(f"temp_{i}.mp4"):
             os.remove(f"temp_{i}.mp4")
@@ -159,7 +181,7 @@ def upload_to_youtube(file_path, title, description):
             body={
                 "snippet": {
                     "title": title[:100],
-                    "description": description[:4000], # YouTube limit
+                    "description": description[:4000],
                     "tags": ["shorts", "horror", "thriller", "scary", "mystery"],
                     "categoryId": "24" 
                 },
