@@ -27,7 +27,7 @@ async def generate_content():
     current_topic = topics[0].strip()
     
     # 2. GENERATE SCRIPT (Thriller Style)
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
     You are a horror narrator. Write a script for a {MODE} video about: '{current_topic}'.
     Rules:
