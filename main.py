@@ -56,11 +56,12 @@ def generate_gemini_script(topic):
     prompt_text = f"""
     You are a horror narrator. Write a script for a {MODE} video about: '{topic}'.
     Rules:
-    - No intro (Start immediately with a hook).
-    - Scary, suspenseful tone.
-    - Max 150 words.
-    - Do not include scene directions like [Intro], just the spoken text.
-    - Plain text only.
+    - No intro. Start immediately with a hook.
+    - Write in SHORT, PUNCHY sentences.
+    - Use '...' to indicate dramatic pauses between scary moments.
+    - Tone: Deep, slow, ominous.
+    - Max 140 words.
+    - Plain text only (no markdown).
     """
     
     data = { "contents": [{ "parts": [{"text": prompt_text}] }] }
@@ -107,9 +108,16 @@ async def main_pipeline():
     print("📜 Script generated successfully.")
     
     # 3. GENERATE AUDIO
+    # 3. GENERATE AUDIO (Tuned for Thriller Vibe)
     print("🎙️ Generating Audio...")
-    voice = "en-US-ChristopherNeural"
-    communicate = edge_tts.Communicate(script_text, voice)
+    
+    # We use a British voice because they sound more "Storyteller" and less "Assistant"
+    voice = "en-GB-RyanNeural" 
+    
+    # RATE: -10% makes it slower and more suspenseful
+    # PITCH: -2Hz makes it slightly deeper and more serious
+    communicate = edge_tts.Communicate(script_text, voice, rate="-10%", pitch="-2Hz")
+    
     await communicate.save("voice.mp3")
     
     # 4. GET VISUALS
