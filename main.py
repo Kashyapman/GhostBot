@@ -8,6 +8,10 @@ from moviepy.editor import *
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+import PIL.Image
+
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
 # --- CONFIGURATION ---
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
