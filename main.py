@@ -1,4 +1,11 @@
 import os
+import PIL.Image
+
+# --- FIX FOR "ANTIALIAS" ERROR ---
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+# ---------------------------------
+
 import random
 import requests
 import edge_tts
@@ -8,10 +15,6 @@ from moviepy.editor import *
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-import PIL.Image
-
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
 # --- CONFIGURATION ---
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
@@ -21,8 +24,7 @@ MODE = os.environ.get("VIDEO_MODE", "Short")
 
 def get_dynamic_model_url():
     """
-    Dynamically finds a working model name associated with the API key.
-    This prevents '404 Not Found' errors by never guessing names.
+    Dynamically finds a working model name to prevent 404 errors.
     """
     print("🔍 Scanning for available AI models...")
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
@@ -31,28 +33,21 @@ def get_dynamic_model_url():
         response = requests.get(list_url)
         if response.status_code == 200:
             data = response.json()
-            # Look for any model that supports 'generateContent'
             for model in data.get('models', []):
                 if "generateContent" in model.get('supportedGenerationMethods', []):
-                    model_name = model['name']
-                    print(f"✅ Found working model: {model_name}")
-                    # Construct the URL dynamically
-                    return f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={GEMINI_KEY}"
+                    return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
             
-        print("⚠️ No specific models found in list. Trying generic fallback.")
     except Exception as e:
         print(f"⚠️ Model scan failed: {e}")
 
-    # Ultimate fallback if scanning fails (usually 'gemini-pro' works for legacy keys)
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
 
 def generate_gemini_script(topic):
     print(f"Asking AI about: {topic}...")
-    
-    # Get the URL dynamically
     url = get_dynamic_model_url()
-    
     headers = {'Content-Type': 'application/json'}
+    
+    # IMPROVED PROMPT FOR EMOTION
     prompt_text = f"""
     You are a horror narrator. Write a script for a {MODE} video about: '{topic}'.
     Rules:
@@ -68,33 +63,30 @@ def generate_gemini_script(topic):
     
     try:
         response = requests.post(url, headers=headers, json=data)
-        
         if response.status_code == 200:
             result = response.json()
             try:
                 script = result['candidates'][0]['content']['parts'][0]['text']
                 return script.replace("*", "").strip()
             except (KeyError, IndexError):
-                print(f"❌ API returned unexpected structure: {response.text}")
                 return None
-        else:
-            print(f"❌ Generation Error: {response.status_code} - {response.text}")
-            return None
-            
-    except Exception as e:
-        print(f"Connection Error: {e}")
+        return None
+    except Exception:
         return None
 
 async def main_pipeline():
-    # 1. READ TOPIC
+    # 1. READ TOPIC (RANDOMIZED FIX)
     try:
         with open("topics.txt", "r") as f:
-            topics = f.readlines()
+            topics = [line.strip() for line in f.readlines() if line.strip()]
+            
         if not topics:
             print("No topics left! Using fallback.")
             current_topic = "The mystery of the dark forest" 
         else:
-            current_topic = topics[0].strip()
+            # THIS IS THE FIX: Pick a random one, not the first one
+            current_topic = random.choice(topics)
+            
     except FileNotFoundError:
         print("topics.txt not found! Using fallback.")
         current_topic = "The mystery of the deep ocean"
@@ -107,17 +99,11 @@ async def main_pipeline():
 
     print("📜 Script generated successfully.")
     
-    # 3. GENERATE AUDIO
-    # 3. GENERATE AUDIO (Tuned for Thriller Vibe)
+    # 3. GENERATE AUDIO (EMOTIONAL TUNING)
     print("🎙️ Generating Audio...")
-    
-    # We use a British voice because they sound more "Storyteller" and less "Assistant"
+    # British voice + Slower Rate + Lower Pitch = Scary Documentary Vibe
     voice = "en-GB-RyanNeural" 
-    
-    # RATE: -10% makes it slower and more suspenseful
-    # PITCH: -2Hz makes it slightly deeper and more serious
     communicate = edge_tts.Communicate(script_text, voice, rate="-10%", pitch="-2Hz")
-    
     await communicate.save("voice.mp3")
     
     # 4. GET VISUALS
@@ -135,9 +121,7 @@ async def main_pipeline():
         if video_data.get('videos'):
             for i, video in enumerate(video_data['videos']):
                 video_files = video['video_files']
-                # Pick a mid-quality video
                 video_files.sort(key=lambda x: x['width'], reverse=True)
-                # Avoid massive 4k files to save memory
                 target_video = next((v for v in video_files if v['width'] <= 1920), video_files[0])
                 
                 v_content = requests.get(target_video['link']).content
@@ -167,12 +151,11 @@ async def main_pipeline():
                 if current_duration >= audio.duration: break
                 
                 if MODE == "Short":
-                    # Crop logic for Shorts
                     w, h = clip.size
-                    if w > h: # Landscape to Portrait crop
+                    if w > h:
                         clip = clip.crop(x1=w/2 - h*(9/16)/2, width=h*(9/16), height=h)
                     clip = clip.resize(height=1920)
-                    clip = clip.resize(width=1080) # Force width just in case
+                    clip = clip.resize(width=1080)
                 else:
                     clip = clip.resize(height=1080)
 
@@ -186,7 +169,6 @@ async def main_pipeline():
         output_file = "final_video.mp4"
         final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24, preset="ultrafast")
         
-        # Cleanup
         audio.close()
         for clip in video_clips: clip.close()
             
