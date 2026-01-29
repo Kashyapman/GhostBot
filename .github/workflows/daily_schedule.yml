@@ -2,7 +2,7 @@ name: 4x Daily Horror Bot
 
 on:
   schedule:
-    # 8am & 4pm UTC = Shorts | 12pm & 8pm UTC = Long Form
+    # Runs at 8am, 12pm, 4pm, 8pm UTC automatically
     - cron: '0 8,12,16,20 * * *'
   workflow_dispatch:
     inputs:
@@ -19,35 +19,36 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # REQUIRED to delete topics from file
+      contents: write # REQUIRED: Allows the bot to delete used topics
     
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Install System Tools
+      - name: Install System Dependencies
+        # We added 'espeak-ng' here which is REQUIRED for the new Kokoro Voice AI
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick
+          sudo apt-get install -y ffmpeg imagemagick espeak-ng
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install Libraries
+      - name: Install Python Libraries
         run: pip install -r requirements.txt
 
       - name: Determine Mode
         id: mode
         run: |
-          # If run manually, use the dropdown input
+          # Logic to switch between Short and Long form based on time or manual input
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
              echo "VIDEO_MODE=${{ inputs.manual_mode }}" >> $GITHUB_ENV
              echo "Manual Run detected. Mode: ${{ inputs.manual_mode }}"
           else
-             # If run by schedule, check the hour
              hour=$(date -u +%H)
+             # At 12:00 and 20:00 UTC, make Long videos. Otherwise Shorts.
              if [ "$hour" -eq "12" ] || [ "$hour" -eq "20" ]; then
                echo "VIDEO_MODE=Long" >> $GITHUB_ENV
                echo "Scheduled Run. Mode: Long"
@@ -57,7 +58,7 @@ jobs:
              fi
           fi
 
-      - name: Run Bot
+      - name: Run Bot (Generate Video)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -65,8 +66,8 @@ jobs:
           VIDEO_MODE: ${{ env.VIDEO_MODE }}
         run: python main.py
 
-      # --- SAVE CHANGES TO TOPICS.TXT ---
       - name: Commit and Push Topic Deletion
+        # This saves the changes to 'topics.txt' so you don't repeat videos
         run: |
           git config --global user.name 'GhostBot'
           git config --global user.email 'ghostbot@noreply.github.com'
