@@ -1,7 +1,9 @@
 requests
-edge-tts
 moviepy==1.0.3
 Pillow==9.5.0
+kokoro-onnx
+soundfile
+numpy
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
