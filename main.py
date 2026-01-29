@@ -1,17 +1,18 @@
 import os
 import PIL.Image
 
-# --- FIX FOR "ANTIALIAS" ERROR ---
+# --- FIX FOR PILLOW ERROR ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
-# ---------------------------------
+# ----------------------------
 
 import random
 import requests
-import edge_tts
-import asyncio
 import json
 import re
+import soundfile as sf
+import numpy as np
+from kokoro_onnx import Kokoro
 from moviepy.editor import *
 from moviepy.audio.fx.all import audio_loop
 from google.oauth2.credentials import Credentials
@@ -22,11 +23,12 @@ from googleapiclient.http import MediaFileUpload
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
-MODE = os.environ.get("VIDEO_MODE", "Short") 
-# Primary Emotional Voice
-VOICE_NAME = "en-US-DavisNeural" 
-# Fallback Safe Voice
-BACKUP_VOICE = "en-US-ChristopherNeural"
+MODE = os.environ.get("VIDEO_MODE", "Short")
+
+# --- KOKORO VOICE SETTINGS ---
+# 'bm_lewis' is a deep, calm American male voice perfect for horror.
+# 'am_adam' is another option.
+VOICE_ID = "bm_lewis" 
 
 SFX_MAP = {
     "scream": "scream.mp3", "screaming": "scream.mp3", "shout": "scream.mp3",
@@ -35,6 +37,27 @@ SFX_MAP = {
     "thud": "thud.mp3", "slam": "thud.mp3", "fell": "thud.mp3",
     "whisper": "whisper.mp3", "voice": "whisper.mp3", "hear": "whisper.mp3"
 }
+
+def download_kokoro_model():
+    """
+    Downloads the Kokoro model files (ONNX + Voices) automatically.
+    This is the 'Deep Research' magic - running a high-end AI locally.
+    """
+    print("🧠 Downloading Kokoro AI Model...")
+    
+    files = {
+        "kokoro-v0_19.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx",
+        "voices.json": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json"
+    }
+    
+    for filename, url in files.items():
+        if not os.path.exists(filename):
+            print(f"   Downloading {filename}...")
+            r = requests.get(url, stream=True)
+            with open(filename, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+    print("✅ Model Ready.")
 
 def get_dynamic_model_url():
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
@@ -48,23 +71,22 @@ def get_dynamic_model_url():
     except: pass
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
 
-def generate_ssml_script(topic):
-    print(f"Asking AI Director about: {topic} ({MODE} Mode)...")
+def generate_script(topic):
+    print(f"Asking AI Director about: {topic}...")
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
     max_words = "140" if MODE == "Short" else "300"
     
+    # NOTE: Kokoro doesn't need SSML tags. It needs natural punctuation.
     prompt_text = f"""
-    You are a horror audio director. Create a script for a {MODE} video about: '{topic}'.
-    CRITICAL: Output ONLY valid SSML code. Do not write "Here is the script".
-    INSTRUCTION: You MUST include action words like 'knock', 'scream', 'footsteps', 'whisper' for SFX.
-    Structure:
-    <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='en-US'>
-      <voice name='{VOICE_NAME}'>
-         STORY GOES HERE...
-      </voice>
-    </speak>
+    You are a horror audio director. Write a script for a {MODE} video about: '{topic}'.
+    
+    CRITICAL: Write in PLAIN TEXT. No XML. No SSML.
+    INSTRUCTION: Use natural punctuation (...) for pauses.
+    INSTRUCTION: Include these words naturally for SFX: 'knock', 'scream', 'footsteps', 'whisper'.
+    
+    Tone: Deep, ominous, slow.
     Max {max_words} words.
     """
     
@@ -75,34 +97,34 @@ def generate_ssml_script(topic):
             result = response.json()
             if 'candidates' in result:
                 raw = result['candidates'][0]['content']['parts'][0]['text']
-                # Clean Markdown
-                clean = raw.replace("```xml", "").replace("```", "").strip()
-                return clean
+                return raw.replace("*", "").strip()
     except Exception as e:
         print(f"Gemini Error: {e}")
     return None
 
 def add_smart_sfx(voice_clip, script_text):
-    # Remove XML to find words for timing
-    clean_text = re.sub('<[^<]+?>', '', script_text) 
-    words = clean_text.lower().split()
+    clean_text = re.sub(r'[^\w\s]', '', script_text).lower()
+    words = clean_text.split()
     total_words = len(words)
     sfx_clips = []
     
-    if total_words < 5: return [] # Too short for SFX
+    if total_words < 5: return []
     
     for index, word in enumerate(words):
-        clean_word = re.sub(r'[^\w\s]', '', word)
-        if clean_word in SFX_MAP:
-            sfx_path = os.path.join("sfx", SFX_MAP[clean_word])
+        if word in SFX_MAP:
+            sfx_path = os.path.join("sfx", SFX_MAP[word])
             if os.path.exists(sfx_path):
-                # Calculate time, keeping buffer from end
+                # 0.9 factor to prevent SFX from playing after voice ends
                 est_time = (index / total_words) * (voice_clip.duration * 0.9)
                 sfx = AudioFileClip(sfx_path).set_start(est_time).volumex(0.6)
                 sfx_clips.append(sfx)
     return sfx_clips
 
 async def main_pipeline():
+    # 0. SETUP KOKORO
+    download_kokoro_model()
+    kokoro = Kokoro("kokoro-v0_19.onnx", "voices.json")
+
     # 1. READ TOPIC
     current_topic = "The mystery of the dark forest" 
     try:
@@ -114,54 +136,34 @@ async def main_pipeline():
             with open("topics.txt", "w") as f:
                 for t in topics[1:]: f.write(t + "\n")
             print(f"✅ Selected Topic: {current_topic}")
-            print(f"📉 Topics remaining: {len(topics)-1}")
         else:
             print("⚠️ No topics left! Using fallback.")
     except FileNotFoundError:
         print("⚠️ topics.txt not found! Using fallback.")
 
     # 2. GENERATE SCRIPT
-    script_content = generate_ssml_script(current_topic)
-    
-    # FAIL-SAFE: If Gemini fails, use a hardcoded fallback text
-    if not script_content or len(script_content) < 10:
-        print("⚠️ Script generation failed or was empty. Using Emergency Script.")
-        script_content = f"I found this footage in the archives. It shows {current_topic}. I warn you, do not watch until the end."
+    script_text = generate_script(current_topic)
+    if not script_text: 
+        script_text = f"I cannot explain what I saw in {current_topic}. It was beyond human understanding."
 
-    print(f"📝 Script Preview: {script_content[:50]}...")
+    print(f"📝 Script Preview: {script_text[:50]}...")
     
-    # 3. GENERATE VOICE (ROBUST METHOD)
-    print("🎙️ Generating Voice...")
-    voice_file = "voice.mp3"
-    
+    # 3. GENERATE VOICE (THE KOKORO WAY)
+    print("🎙️ Generating High-Fidelity Voice...")
     try:
-        # Attempt 1: Emotional SSML
-        communicate = edge_tts.Communicate(script_content, VOICE_NAME)
-        await communicate.save(voice_file)
-        
-        # Verify file was actually created and has size
-        if not os.path.exists(voice_file) or os.path.getsize(voice_file) < 100:
-            raise Exception("Generated audio file is empty")
-            
+        # Kokoro generates raw audio samples
+        samples, sample_rate = kokoro.create(
+            script_text, 
+            voice=VOICE_ID, 
+            speed=0.9, # 0.9 = Slightly slower/scarier
+            lang="en-us"
+        )
+        # Save as WAV using soundfile
+        sf.write("voice.wav", samples, sample_rate)
+        print("✅ Audio Generated successfully.")
     except Exception as e:
-        print(f"⚠️ Primary Voice Failed ({e}). Switching to Backup Voice...")
-        
-        try:
-            # Attempt 2: Plain Text with Backup Voice
-            # Strip all XML tags to ensure clean text
-            plain_text = re.sub('<[^<]+?>', '', script_content)
-            
-            # Double check plain text isn't empty
-            if not plain_text.strip():
-                plain_text = f"This is a report on {current_topic}. The data is corrupted."
-            
-            print(f"🎙️ Backup Text: {plain_text[:50]}...")
-            communicate = edge_tts.Communicate(plain_text, BACKUP_VOICE)
-            await communicate.save(voice_file)
-            
-        except Exception as e2:
-            print(f"❌ CRITICAL: Backup Voice also failed: {e2}")
-            return None, None, None
+        print(f"❌ Kokoro Failed: {e}")
+        return None, None, None
     
     # 4. GET VISUALS
     print("🎬 Downloading Video...")
@@ -190,14 +192,14 @@ async def main_pipeline():
     # 5. MIXING
     print("✂️ Mixing Audio Layers...")
     try:
-        voice_clip = AudioFileClip("voice.mp3")
+        voice_clip = AudioFileClip("voice.wav") # Note: .wav extension
         
         # MUSIC LAYER
         music_folder = "music"
         music_files = []
         if os.path.exists(music_folder):
             music_files = [f for f in os.listdir(music_folder) if f.endswith(".mp3")]
-            
+        
         audio_layers = [voice_clip]
         
         if music_files:
@@ -208,8 +210,7 @@ async def main_pipeline():
             music_clip = music_clip.subclip(0, voice_clip.duration).volumex(0.25)
             audio_layers.append(music_clip)
             
-        # SFX LAYER (Pass original script for scanning)
-        sfx_clips = add_smart_sfx(voice_clip, script_content)
+        sfx_clips = add_smart_sfx(voice_clip, script_text)
         audio_layers.extend(sfx_clips)
         
         final_audio = CompositeAudioClip(audio_layers)
