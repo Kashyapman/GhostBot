@@ -72,12 +72,9 @@ def generate_script(topic):
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
-    # --- INTELLIGENT PROMPTING ---
     if MODE == "Short":
-        # CLIFFHANGER PROMPT
         prompt_text = f"""
         You are a mystery storyteller. Write a TEASER script for a YouTube Short about: '{topic}'.
-        
         RULES:
         1. Tell the beginning of the mystery (the "Hook").
         2. Build extreme suspense.
@@ -88,13 +85,11 @@ def generate_script(topic):
         7. Plain text only. Use '...' for pauses.
         """
     else:
-        # FULL STORY PROMPT (Long Video)
         prompt_text = f"""
         You are a deep-dive investigation journalist. Write a FULL SCRIPT for a video about: '{topic}'.
-        
         RULES:
         1. Cover the entire story: The Hook, The Details, The Theories, and The Conclusion.
-        2. Tone: Serious, documentary style (like 'LEMMiNO' or 'Barely Sociable').
+        2. Tone: Serious, documentary style.
         3. Max 350 words.
         4. Plain text only. Use '...' for pauses.
         """
@@ -110,6 +105,45 @@ def generate_script(topic):
     except Exception as e:
         print(f"Gemini Error: {e}")
     return None
+
+def generate_metadata(topic, script_text):
+    """
+    The SEO Agent: Generates viral Title, Description, and Tags.
+    """
+    print("📈 Generating Viral Metadata (SEO)...")
+    url = get_dynamic_model_url()
+    headers = {'Content-Type': 'application/json'}
+    
+    prompt_text = f"""
+    You are a YouTube SEO Expert. Based on this topic: '{topic}' and script: '{script_text[:200]}...', generate metadata.
+    
+    OUTPUT FORMAT: JSON ONLY.
+    {{
+      "title": "Write a clickbait, viral title (under 90 chars). Use ALL CAPS for one power word. Example: The SHOCKING Truth about...",
+      "description": "Write a 3-line engaging description with keywords.",
+      "tags": ["tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9", "tag10"]
+    }}
+    """
+    
+    data = { "contents": [{ "parts": [{"text": prompt_text}] }] }
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 200:
+            result = response.json()
+            if 'candidates' in result:
+                raw = result['candidates'][0]['content']['parts'][0]['text']
+                # Clean JSON
+                clean_json = raw.replace("```json", "").replace("```", "").strip()
+                return json.loads(clean_json)
+    except Exception as e:
+        print(f"Metadata Error: {e}")
+    
+    # Fallback if AI fails
+    return {
+        "title": f"The Mystery of {topic} #shorts",
+        "description": f"A short documentary about {topic}. #mystery #conspiracy",
+        "tags": ["mystery", "scary", "horror", "facts", "documentary"]
+    }
 
 def add_smart_sfx(voice_clip, script_text):
     clean_text = re.sub(r'[^\w\s]', '', script_text).lower()
@@ -127,62 +161,51 @@ def add_smart_sfx(voice_clip, script_text):
     return sfx_clips
 
 def manage_topics():
-    """
-    The Brain: Decides which topic to pick based on Short vs Long mode.
-    """
     selected_topic = None
-    
-    # ensure files exist
     if not os.path.exists(TOPICS_FILE): open(TOPICS_FILE, 'w').close()
     if not os.path.exists(LONG_QUEUE_FILE): open(LONG_QUEUE_FILE, 'w').close()
 
     if MODE == "Long":
-        # PRIORITY 1: Check the Long Queue (Topics that were already Shorts)
         with open(LONG_QUEUE_FILE, 'r') as f:
             long_candidates = [l.strip() for l in f.readlines() if l.strip()]
-        
         if long_candidates:
             selected_topic = long_candidates[0]
-            # Remove from queue (It's done now)
             with open(LONG_QUEUE_FILE, 'w') as f:
                 for t in long_candidates[1:]: f.write(t + "\n")
             print(f"✅ Found topic in Long Queue: {selected_topic}")
             return selected_topic
             
-    # PRIORITY 2: If Short Mode OR Long Queue is empty, take new topic
     with open(TOPICS_FILE, 'r') as f:
         new_candidates = [l.strip() for l in f.readlines() if l.strip()]
-        
     if new_candidates:
         selected_topic = new_candidates[0]
-        # Remove from Main List
         with open(TOPICS_FILE, 'w') as f:
             for t in new_candidates[1:]: f.write(t + "\n")
-            
-        # IF SHORT: Save it to Long Queue for later
         if MODE == "Short":
-            print(f"📌 Saving '{selected_topic}' to Long Queue for later.")
             with open(LONG_QUEUE_FILE, 'a') as f:
                 f.write(selected_topic + "\n")
-                
         return selected_topic
 
-    return "The Mystery of the Unknown" # Fallback
+    return "The Mystery of the Unknown"
 
 async def main_pipeline():
     download_kokoro_model()
     kokoro = Kokoro("kokoro-v0_19.onnx", "voices.json")
 
-    # 1. SMART TOPIC SELECTION
+    # 1. TOPIC
     current_topic = manage_topics()
     print(f"🎬 Processing Topic: {current_topic}")
 
-    # 2. GENERATE SCRIPT
+    # 2. SCRIPT
     script_text = generate_script(current_topic)
     if not script_text: script_text = f"Mystery: {current_topic}"
     print(f"📝 Script Preview: {script_text[:50]}...")
     
-    # 3. GENERATE VOICE
+    # 3. METADATA (NEW STEP)
+    metadata = generate_metadata(current_topic, script_text)
+    print(f"🏷️ Generated Title: {metadata['title']}")
+    
+    # 4. VOICE
     print(f"🎙️ Generating Voice ({VOICE_ID})...")
     try:
         samples, sample_rate = kokoro.create(
@@ -191,14 +214,14 @@ async def main_pipeline():
         sf.write("voice.wav", samples, sample_rate)
     except Exception as e:
         print(f"❌ Kokoro Failed: {e}")
-        return None, None, None
+        return None, None
     
-    # 4. GET VISUALS
+    # 5. VISUALS
     print("🎬 Downloading Video...")
     search_query = "mystery investigation dark document classified"
     headers = {"Authorization": PEXELS_KEY}
     orientation = 'portrait' if MODE == 'Short' else 'landscape'
-    clip_count = 3 if MODE == 'Short' else 6 # More clips for long videos
+    clip_count = 3 if MODE == 'Short' else 6 
     url = f"https://api.pexels.com/videos/search?query={search_query}&per_page={clip_count}&orientation={orientation}"
     
     r = requests.get(url, headers=headers)
@@ -207,16 +230,15 @@ async def main_pipeline():
         video_data = r.json()
         if video_data.get('videos'):
             for i, video in enumerate(video_data['videos']):
-                target = video['video_files'][0] # Take highest quality available
-                # Filter for manageable file size if needed, but usually fine
+                target = video['video_files'][0] 
                 with open(f"temp_{i}.mp4", "wb") as f:
                     f.write(requests.get(target['link']).content)
                 try: video_clips.append(VideoFileClip(f"temp_{i}.mp4"))
                 except: pass
 
-    if not video_clips: return None, None, None
+    if not video_clips: return None, None
 
-    # 5. MIXING
+    # 6. MIXING
     print("✂️ Mixing Audio Layers...")
     try:
         voice_clip = AudioFileClip("voice.wav")
@@ -272,26 +294,36 @@ async def main_pipeline():
         for i in range(len(video_clips)): 
             if os.path.exists(f"temp_{i}.mp4"): os.remove(f"temp_{i}.mp4")
             
-        return output_file, current_topic, f"Mystery: {current_topic}"
+        return output_file, metadata
         
     except Exception as e:
         print(f"❌ Editing Failed: {e}")
-        return None, None, None
+        return None, None
 
-def upload_to_youtube(file_path, title, description):
+def upload_to_youtube(file_path, metadata):
     if not file_path: return
     print("🚀 Uploading to YouTube...")
     try:
         creds_dict = json.loads(YOUTUBE_TOKEN_VAL)
         creds = Credentials.from_authorized_user_info(creds_dict)
         youtube = build('youtube', 'v3', credentials=creds)
-        tags = ["shorts", "mystery", "conspiracy", "scary", "facts"]
+        
+        # USE DYNAMIC METADATA
+        title = metadata['title']
+        if MODE == "Short" and "#shorts" not in title.lower():
+            title += " #shorts"
+            
+        description = metadata['description'] + "\n\n#mystery #conspiracy"
+        tags = metadata['tags']
+        
         request = youtube.videos().insert(
             part="snippet,status",
             body={
                 "snippet": {
-                    "title": title[:100], "description": description[:4500],
-                    "tags": tags, "categoryId": "24" 
+                    "title": title[:100], 
+                    "description": description[:4500],
+                    "tags": tags, 
+                    "categoryId": "24" 
                 },
                 "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
             },
@@ -305,8 +337,8 @@ def upload_to_youtube(file_path, title, description):
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     try:
-        video_path, topic, desc = loop.run_until_complete(main_pipeline())
-        final_title = f"{topic} #shorts" if MODE == "Short" else topic
-        if video_path: upload_to_youtube(video_path, final_title, desc)
+        video_path, metadata = loop.run_until_complete(main_pipeline())
+        if video_path and metadata: 
+            upload_to_youtube(video_path, metadata)
     except Exception as e:
         print(f"Critical Error: {e}")
