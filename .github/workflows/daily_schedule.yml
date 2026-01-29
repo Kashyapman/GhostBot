@@ -2,12 +2,24 @@ name: 4x Daily Horror Bot
 
 on:
   schedule:
-    - cron: '0 8,12,16,20 * * *' # 8am, 12pm, 4pm, 8pm UTC
+    # 8am & 4pm UTC = Shorts | 12pm & 8pm UTC = Long Form
+    - cron: '0 8,12,16,20 * * *'
   workflow_dispatch:
+    inputs:
+      manual_mode:
+        description: 'Video Mode (Short/Long)'
+        required: true
+        default: 'Short'
+        type: choice
+        options:
+        - Short
+        - Long
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # REQUIRED to delete topics from file
     
     steps:
       - name: Checkout Code
@@ -26,14 +38,23 @@ jobs:
       - name: Install Libraries
         run: pip install -r requirements.txt
 
-      - name: Determine Mode (Short vs Long)
+      - name: Determine Mode
         id: mode
         run: |
-          hour=$(date -u +%H)
-          if [ "$hour" -eq "12" ] || [ "$hour" -eq "20" ]; then
-            echo "VIDEO_MODE=Long" >> $GITHUB_ENV
+          # If run manually, use the dropdown input
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+             echo "VIDEO_MODE=${{ inputs.manual_mode }}" >> $GITHUB_ENV
+             echo "Manual Run detected. Mode: ${{ inputs.manual_mode }}"
           else
-            echo "VIDEO_MODE=Short" >> $GITHUB_ENV
+             # If run by schedule, check the hour
+             hour=$(date -u +%H)
+             if [ "$hour" -eq "12" ] || [ "$hour" -eq "20" ]; then
+               echo "VIDEO_MODE=Long" >> $GITHUB_ENV
+               echo "Scheduled Run. Mode: Long"
+             else
+               echo "VIDEO_MODE=Short" >> $GITHUB_ENV
+               echo "Scheduled Run. Mode: Short"
+             fi
           fi
 
       - name: Run Bot
@@ -43,3 +64,12 @@ jobs:
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
           VIDEO_MODE: ${{ env.VIDEO_MODE }}
         run: python main.py
+
+      # --- SAVE CHANGES TO TOPICS.TXT ---
+      - name: Commit and Push Topic Deletion
+        run: |
+          git config --global user.name 'GhostBot'
+          git config --global user.email 'ghostbot@noreply.github.com'
+          git add topics.txt
+          git commit -m "Removed used topic" || echo "No changes to commit"
+          git push
