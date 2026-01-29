@@ -19,14 +19,14 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # REQUIRED: Allows the bot to delete used topics
+      contents: write # REQUIRED: Allows the bot to save queue changes
     
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Install System Dependencies
-        # We added 'espeak-ng' here which is REQUIRED for the new Kokoro Voice AI
+        # 'espeak-ng' is REQUIRED for the Kokoro Voice AI
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick espeak-ng
@@ -66,11 +66,12 @@ jobs:
           VIDEO_MODE: ${{ env.VIDEO_MODE }}
         run: python main.py
 
-      - name: Commit and Push Topic Deletion
-        # This saves the changes to 'topics.txt' so you don't repeat videos
+      - name: Commit and Push Queue Updates
+        # Saves BOTH the main topic list and the long-form queue
         run: |
           git config --global user.name 'GhostBot'
           git config --global user.email 'ghostbot@noreply.github.com'
-          git add topics.txt
-          git commit -m "Removed used topic" || echo "No changes to commit"
+          # Add all text files so new queues are tracked automatically
+          git add topics.txt long_form_queue.txt
+          git commit -m "Updated video queues and topic lists" || echo "No changes to commit"
           git push
