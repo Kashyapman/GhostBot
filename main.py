@@ -23,7 +23,10 @@ GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 MODE = os.environ.get("VIDEO_MODE", "Short") 
-VOICE_NAME = "en-US-DavisNeural"
+# Primary Emotional Voice
+VOICE_NAME = "en-US-DavisNeural" 
+# Fallback Safe Voice
+BACKUP_VOICE = "en-US-ChristopherNeural"
 
 SFX_MAP = {
     "scream": "scream.mp3", "screaming": "scream.mp3", "shout": "scream.mp3",
@@ -70,42 +73,33 @@ def generate_ssml_script(topic):
         response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
             result = response.json()
-            raw = result['candidates'][0]['content']['parts'][0]['text']
-            
-            # --- NEW CLEANER FUNCTION ---
-            # 1. Strip markdown
-            clean = raw.replace("```xml", "").replace("```", "").strip()
-            # 2. Extract ONLY the <speak>...</speak> part using Regex
-            match = re.search(r"<speak[\s\S]*?</speak>", clean)
-            if match:
-                return match.group(0)
-            else:
-                # Fallback: If no speak tags found, return raw text for standard reading
-                print("⚠️ No SSML tags found. Using raw text.")
+            if 'candidates' in result:
+                raw = result['candidates'][0]['content']['parts'][0]['text']
+                # Clean Markdown
+                clean = raw.replace("```xml", "").replace("```", "").strip()
                 return clean
     except Exception as e:
         print(f"Gemini Error: {e}")
-        return None
     return None
 
 def add_smart_sfx(voice_clip, script_text):
-    clean_text = re.sub('<[^<]+?>', '', script_text) # Remove XML to find words
+    # Remove XML to find words for timing
+    clean_text = re.sub('<[^<]+?>', '', script_text) 
     words = clean_text.lower().split()
     total_words = len(words)
     sfx_clips = []
+    
+    if total_words < 5: return [] # Too short for SFX
     
     for index, word in enumerate(words):
         clean_word = re.sub(r'[^\w\s]', '', word)
         if clean_word in SFX_MAP:
             sfx_path = os.path.join("sfx", SFX_MAP[clean_word])
             if os.path.exists(sfx_path):
-                # Safety check: avoid dividing by zero
-                if total_words > 0:
-                    est_time = (index / total_words) * voice_clip.duration
-                    # Don't put SFX past the end of audio
-                    if est_time < voice_clip.duration:
-                        sfx = AudioFileClip(sfx_path).set_start(est_time).volumex(0.6)
-                        sfx_clips.append(sfx)
+                # Calculate time, keeping buffer from end
+                est_time = (index / total_words) * (voice_clip.duration * 0.9)
+                sfx = AudioFileClip(sfx_path).set_start(est_time).volumex(0.6)
+                sfx_clips.append(sfx)
     return sfx_clips
 
 async def main_pipeline():
@@ -127,20 +121,47 @@ async def main_pipeline():
         print("⚠️ topics.txt not found! Using fallback.")
 
     # 2. GENERATE SCRIPT
-    ssml_script = generate_ssml_script(current_topic)
-    if not ssml_script: return None, None, None
+    script_content = generate_ssml_script(current_topic)
     
-    # 3. GENERATE VOICE (WITH SAFETY NET)
+    # FAIL-SAFE: If Gemini fails, use a hardcoded fallback text
+    if not script_content or len(script_content) < 10:
+        print("⚠️ Script generation failed or was empty. Using Emergency Script.")
+        script_content = f"I found this footage in the archives. It shows {current_topic}. I warn you, do not watch until the end."
+
+    print(f"📝 Script Preview: {script_content[:50]}...")
+    
+    # 3. GENERATE VOICE (ROBUST METHOD)
     print("🎙️ Generating Voice...")
+    voice_file = "voice.mp3"
+    
     try:
-        communicate = edge_tts.Communicate(ssml_script, VOICE_NAME)
-        await communicate.save("voice.mp3")
+        # Attempt 1: Emotional SSML
+        communicate = edge_tts.Communicate(script_content, VOICE_NAME)
+        await communicate.save(voice_file)
+        
+        # Verify file was actually created and has size
+        if not os.path.exists(voice_file) or os.path.getsize(voice_file) < 100:
+            raise Exception("Generated audio file is empty")
+            
     except Exception as e:
-        print(f"⚠️ SSML Failed ({e}). Switching to Standard Text Mode...")
-        # Fallback: Strip tags and read normally
-        plain_text = re.sub('<[^<]+?>', '', ssml_script)
-        communicate = edge_tts.Communicate(plain_text, VOICE_NAME)
-        await communicate.save("voice.mp3")
+        print(f"⚠️ Primary Voice Failed ({e}). Switching to Backup Voice...")
+        
+        try:
+            # Attempt 2: Plain Text with Backup Voice
+            # Strip all XML tags to ensure clean text
+            plain_text = re.sub('<[^<]+?>', '', script_content)
+            
+            # Double check plain text isn't empty
+            if not plain_text.strip():
+                plain_text = f"This is a report on {current_topic}. The data is corrupted."
+            
+            print(f"🎙️ Backup Text: {plain_text[:50]}...")
+            communicate = edge_tts.Communicate(plain_text, BACKUP_VOICE)
+            await communicate.save(voice_file)
+            
+        except Exception as e2:
+            print(f"❌ CRITICAL: Backup Voice also failed: {e2}")
+            return None, None, None
     
     # 4. GET VISUALS
     print("🎬 Downloading Video...")
@@ -187,8 +208,8 @@ async def main_pipeline():
             music_clip = music_clip.subclip(0, voice_clip.duration).volumex(0.25)
             audio_layers.append(music_clip)
             
-        # SFX LAYER (Pass the raw script for keyword detection)
-        sfx_clips = add_smart_sfx(voice_clip, ssml_script)
+        # SFX LAYER (Pass original script for scanning)
+        sfx_clips = add_smart_sfx(voice_clip, script_content)
         audio_layers.extend(sfx_clips)
         
         final_audio = CompositeAudioClip(audio_layers)
@@ -219,7 +240,6 @@ async def main_pipeline():
         final_video = final_video.subclip(0, voice_clip.duration)
         
         output_file = "final_video.mp4"
-        # Using 'medium' preset for better stability, 'ultrafast' can sometimes glitch audio
         final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24, preset="medium")
         
         voice_clip.close()
