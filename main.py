@@ -22,11 +22,9 @@ from googleapiclient.http import MediaFileUpload
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
-# Default to 'Short' if not specified
 MODE = os.environ.get("VIDEO_MODE", "Short") 
 VOICE_NAME = "en-US-DavisNeural"
 
-# --- SFX MAPPING ---
 SFX_MAP = {
     "scream": "scream.mp3", "screaming": "scream.mp3", "shout": "scream.mp3",
     "knock": "knock.mp3", "banging": "knock.mp3",
@@ -36,7 +34,6 @@ SFX_MAP = {
 }
 
 def get_dynamic_model_url():
-    # Finds a working model to avoid 404 errors
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
     try:
         response = requests.get(list_url)
@@ -53,12 +50,11 @@ def generate_ssml_script(topic):
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
-    # ADJUST LENGTH BASED ON MODE
     max_words = "140" if MODE == "Short" else "300"
     
     prompt_text = f"""
     You are a horror audio director. Create a script for a {MODE} video about: '{topic}'.
-    CRITICAL: Output ONLY valid SSML code.
+    CRITICAL: Output ONLY valid SSML code. Do not write "Here is the script".
     INSTRUCTION: You MUST include action words like 'knock', 'scream', 'footsteps', 'whisper' for SFX.
     Structure:
     <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='en-US'>
@@ -75,12 +71,25 @@ def generate_ssml_script(topic):
         if response.status_code == 200:
             result = response.json()
             raw = result['candidates'][0]['content']['parts'][0]['text']
-            return raw.replace("```xml", "").replace("```", "").strip()
-    except: return None
+            
+            # --- NEW CLEANER FUNCTION ---
+            # 1. Strip markdown
+            clean = raw.replace("```xml", "").replace("```", "").strip()
+            # 2. Extract ONLY the <speak>...</speak> part using Regex
+            match = re.search(r"<speak[\s\S]*?</speak>", clean)
+            if match:
+                return match.group(0)
+            else:
+                # Fallback: If no speak tags found, return raw text for standard reading
+                print("⚠️ No SSML tags found. Using raw text.")
+                return clean
+    except Exception as e:
+        print(f"Gemini Error: {e}")
+        return None
     return None
 
 def add_smart_sfx(voice_clip, script_text):
-    clean_text = re.sub('<[^<]+?>', '', script_text)
+    clean_text = re.sub('<[^<]+?>', '', script_text) # Remove XML to find words
     words = clean_text.lower().split()
     total_words = len(words)
     sfx_clips = []
@@ -90,34 +99,30 @@ def add_smart_sfx(voice_clip, script_text):
         if clean_word in SFX_MAP:
             sfx_path = os.path.join("sfx", SFX_MAP[clean_word])
             if os.path.exists(sfx_path):
-                est_time = (index / total_words) * voice_clip.duration
-                sfx = AudioFileClip(sfx_path).set_start(est_time).volumex(0.6)
-                sfx_clips.append(sfx)
+                # Safety check: avoid dividing by zero
+                if total_words > 0:
+                    est_time = (index / total_words) * voice_clip.duration
+                    # Don't put SFX past the end of audio
+                    if est_time < voice_clip.duration:
+                        sfx = AudioFileClip(sfx_path).set_start(est_time).volumex(0.6)
+                        sfx_clips.append(sfx)
     return sfx_clips
 
 async def main_pipeline():
-    # 1. READ AND UPDATE TOPIC (QUEUE LOGIC)
-    current_topic = "The mystery of the dark forest" # Default
+    # 1. READ TOPIC
+    current_topic = "The mystery of the dark forest" 
     try:
         with open("topics.txt", "r") as f:
             lines = f.readlines()
-            
-        # Filter out empty lines
         topics = [line.strip() for line in lines if line.strip()]
-        
         if topics:
-            current_topic = topics[0] # Take the TOP one
-            remaining_topics = topics[1:] # Save the rest
-            
-            # Write the remaining topics back to the file
+            current_topic = topics[0]
             with open("topics.txt", "w") as f:
-                for t in remaining_topics:
-                    f.write(t + "\n")
+                for t in topics[1:]: f.write(t + "\n")
             print(f"✅ Selected Topic: {current_topic}")
-            print(f"📉 Topics remaining: {len(remaining_topics)}")
+            print(f"📉 Topics remaining: {len(topics)-1}")
         else:
             print("⚠️ No topics left! Using fallback.")
-            
     except FileNotFoundError:
         print("⚠️ topics.txt not found! Using fallback.")
 
@@ -125,22 +130,24 @@ async def main_pipeline():
     ssml_script = generate_ssml_script(current_topic)
     if not ssml_script: return None, None, None
     
-    # 3. GENERATE VOICE
+    # 3. GENERATE VOICE (WITH SAFETY NET)
     print("🎙️ Generating Voice...")
-    communicate = edge_tts.Communicate(ssml_script, VOICE_NAME)
-    await communicate.save("voice.mp3")
+    try:
+        communicate = edge_tts.Communicate(ssml_script, VOICE_NAME)
+        await communicate.save("voice.mp3")
+    except Exception as e:
+        print(f"⚠️ SSML Failed ({e}). Switching to Standard Text Mode...")
+        # Fallback: Strip tags and read normally
+        plain_text = re.sub('<[^<]+?>', '', ssml_script)
+        communicate = edge_tts.Communicate(plain_text, VOICE_NAME)
+        await communicate.save("voice.mp3")
     
     # 4. GET VISUALS
     print("🎬 Downloading Video...")
     search_query = "scary dark thriller"
     headers = {"Authorization": PEXELS_KEY}
-    
-    # Long Form = Landscape (Horizontal), Short Form = Portrait (Vertical)
     orientation = 'portrait' if MODE == 'Short' else 'landscape'
-    
-    # Long form needs more clips (5) than Shorts (3)
     clip_count = 3 if MODE == 'Short' else 5
-    
     url = f"https://api.pexels.com/videos/search?query={search_query}&per_page={clip_count}&orientation={orientation}"
     
     r = requests.get(url, headers=headers)
@@ -150,12 +157,8 @@ async def main_pipeline():
         if video_data.get('videos'):
             for i, video in enumerate(video_data['videos']):
                 video_files = video['video_files']
-                # High quality for Long form, Medium for Shorts
                 video_files.sort(key=lambda x: x['width'], reverse=True)
-                
-                # Pick 1080p for Long, or nearest appropriate size
                 target = video_files[0]
-                
                 with open(f"temp_{i}.mp4", "wb") as f:
                     f.write(requests.get(target['link']).content)
                 try: video_clips.append(VideoFileClip(f"temp_{i}.mp4"))
@@ -170,7 +173,10 @@ async def main_pipeline():
         
         # MUSIC LAYER
         music_folder = "music"
-        music_files = [f for f in os.listdir(music_folder) if f.endswith(".mp3")]
+        music_files = []
+        if os.path.exists(music_folder):
+            music_files = [f for f in os.listdir(music_folder) if f.endswith(".mp3")]
+            
         audio_layers = [voice_clip]
         
         if music_files:
@@ -181,7 +187,7 @@ async def main_pipeline():
             music_clip = music_clip.subclip(0, voice_clip.duration).volumex(0.25)
             audio_layers.append(music_clip)
             
-        # SFX LAYER
+        # SFX LAYER (Pass the raw script for keyword detection)
         sfx_clips = add_smart_sfx(voice_clip, ssml_script)
         audio_layers.extend(sfx_clips)
         
@@ -195,15 +201,12 @@ async def main_pipeline():
                 if current_duration >= voice_clip.duration: break
                 
                 if MODE == "Short":
-                    # Vertical Crop
                     w, h = clip.size
                     if w > h: clip = clip.crop(x1=w/2 - h*(9/16)/2, width=h*(9/16), height=h)
                     clip = clip.resize(height=1920)
                     clip = clip.resize(width=1080)
                 else:
-                    # Horizontal (Long Form) - Resize to 1920x1080
                     clip = clip.resize(height=1080)
-                    # If it's too wide/narrow, crop center to 16:9
                     w, h = clip.size
                     if w/h != 16/9:
                          clip = clip.crop(x1=w/2 - (h*16/9)/2, width=h*16/9, height=h)
@@ -216,7 +219,8 @@ async def main_pipeline():
         final_video = final_video.subclip(0, voice_clip.duration)
         
         output_file = "final_video.mp4"
-        final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24, preset="ultrafast")
+        # Using 'medium' preset for better stability, 'ultrafast' can sometimes glitch audio
+        final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24, preset="medium")
         
         voice_clip.close()
         for clip in video_clips: clip.close()
@@ -236,10 +240,7 @@ def upload_to_youtube(file_path, title, description):
         creds_dict = json.loads(YOUTUBE_TOKEN_VAL)
         creds = Credentials.from_authorized_user_info(creds_dict)
         youtube = build('youtube', 'v3', credentials=creds)
-        
-        # Tags change based on Mode
         tags = ["shorts", "horror"] if MODE == "Short" else ["horror", "thriller", "mystery", "documentary"]
-        
         request = youtube.videos().insert(
             part="snippet,status",
             body={
@@ -260,7 +261,6 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     try:
         video_path, topic, desc = loop.run_until_complete(main_pipeline())
-        # Append #shorts tag ONLY if in Short mode
         final_title = f"{topic} #shorts" if MODE == "Short" else topic
         if video_path: upload_to_youtube(video_path, final_title, desc)
     except Exception as e:
