@@ -1,106 +1,175 @@
-The mystery of the Mary Celeste
-The Dyatlov Pass incident
-The man from Taured who never existed
-The bloop sound from the deep ocean
-The 5 lonely frequencies of space
-Why do mirrors never show you in a dream?
+The Dyatlov Pass Incident
+The Disappearance of Flight MH370
+The Man From Taured who never existed
+The Cicada 3301 Internet Mystery
+The Havana Syndrome Explained
+The Dark Watchers of California
+The Antikythera Mechanism
+The Voynich Manuscript
+The Max Headroom Signal Intrusion
+The Silent Twins: June and Jennifer Gibbons
+The Lead Masks Case
+The Wow! Signal from Space
+The Isdal Woman Spy Mystery
+The Tamam Shud Case
+The Green Children of Woolpit
+The Pollock Twins Reincarnation
+The Black Knight Satellite
+The Philadelphia Experiment
+The Montauk Project
+The Stargate Project: CIA Psychic Spies
+The Gateway Process: CIA Out of Body
 The Russian Sleep Experiment
-The town that disappeared in 1 hour
-The ominous hum of the Taos
-The Black Knight Satellite conspiracy
-Cicada 3301 mystery explained
-The watcher of 657 Boulevard
-The strange disappearance of flight MH370
-The uncanny valley effect explained
-Why Disney World has an underground city
-The dark theory of the Pixar universe
-The SCP Foundation: SCP-173
-The Rake urban legend
-The Mothman sightings of 1966
-The Philadelphia Experiment time travel
-The creepy rules of the quiet game
-Don't look at the moon tonight
-The smiling man in the street
-The elevator game ritual
-The midnight man game
-Hitori Kakurenbo: One man hide and seek
-The goatman of the bridge
-The black eyed children phenomenon
-The shadow people in sleep paralysis
-The glitch in the matrix: duplicate cars
-The mandela effect examples that scare me
-The simulation theory proof
-The lonely death of the astronaut
-The sound of a black hole
-The great attractor pulling us
-The void in space where nothing exists
-The fermi paradox: where is everyone?
-The dark forest theory of the universe
-The signal from the wow! reception
-The face on mars mystery
-The apollo 11 lost 2 minutes
-The astronaut who heard knocking in space
-The demon core radiation incident
-The elephant's foot in chernobyl
-The ghost ship of the arctic
-The lighthouse keepers who vanished
-The roanoke colony disappearance
-The dancing plague of 1518
-The silent twins story
-The boy who lived before
-The reincarnation of pollock twins
-The green children of woolpit
-The man who predicted the titanic
-The curse of the crying boy painting
-The annabelle doll true story
-The conjuring house history
-The amityville horror truth
-The exorcism of emily rose facts
-The skinwalker ranch lights
-The wendigo psychosis
-The siren head origin story
-The slender man internet legend
-The jeff the killer origin
-The ben drowned haunted cartridge
-The lavender town syndrome
-The polybius arcade game myth
-The max headroom signal intrusion
-The captain midnight signal hijack
-The southern television broadcast intrusion
-The toybox killer tapes
-The zodiac killer ciphers
-The somerton man mystery
-The isdal woman spy mystery
-The elisa lam elevator footage
-The death of gloria ramirez
-The toxic lady of the ER
-The lead masks case
-The wow signal coordinates
-The julia sound underwater
-The upsweep sound mystery
-The train sound in the sky
-The sky trumpet phenomenon
-The hum of bristol
-The havana syndrome sound
-The brown note frequency
-The ghost frequency 19hz
-The god helmet experiment
-The gateway process cia document
-The project stargate psychic spies
-The men in black real encounters
-The majestic 12 documents
-The roswell crash bodies
-The area 51 bob lazar story
-The battle of los angeles 1942
-The foo fighters of ww2
-The kecksburg ufo incident
-The rendlesham forest incident
-The phoenix lights mass sighting
-The tic tac ufo nimitz encounter
-The oumuamua asteroid mystery
-The planet 9 theory
-The moon hollow theory
-The simulation reset glitch
-The quantum immortality theory
-The basilisk thought experiment
-The brain in a vat theory
+The Toynbee Tiles Mystery
+The Death of Elisa Lam
+The Cecil Hotel Curse
+The Disappearance of Maura Murray
+The Yuba County Five (American Dyatlov)
+The Sodder Children Smoke
+The Hinterkaifeck Murders
+The Villisca Axe Murders
+The Boy in the Box
+The Somerton Man
+The Zebb Quinn Disappearance
+The Brandon Swanson " Oh Shit" Call
+The Lars Mittank Airport Sprint
+The Jamison Family Mystery
+The Tromp Family Road Trip
+The Lake City Quiet Pills
+The 11B-X-1371 Creepy Video
+The Plague Doctor Video
+The Blank Room Soup Video
+The Username:666 Mystery
+The Polybius Arcade Game Myth
+The Pale Luna Text Adventure
+The Roko's Basilisk Thought Experiment
+The Dead Internet Theory
+The Empty Internet Theory
+The Simulation Theory Proof
+The Glitch in the Matrix Phenomenon
+The Mandela Effect: Berenstain Bears
+The Mandela Effect: Fruit of the Loom
+The Mandela Effect: Shazaam
+The Quantum Immortality Theory
+The Double Slit Experiment
+The Observer Effect
+The Great Attractor
+The Fermi Paradox
+The Dark Forest Theory
+The Zoo Hypothesis
+The Black Hole Sound
+The Bloop Sound
+The Julia Sound
+The Upsweep Sound
+The 52 Hertz Whale
+The Hum Heard Around the World
+The Sky Trumpets Phenomenon
+The Taos Hum
+The Havana Syndrome Sound
+The Brown Note Frequency
+The Ghost Frequency 19hz
+The God Helmet Experiment
+The Battle of Los Angeles 1942
+The Foo Fighters of WW2
+The Ghost Rockets of 1946
+The Kecksburg UFO Incident
+The Rendlesham Forest Incident
+The Phoenix Lights
+The Tic Tac UFO Nimitz
+The Oumuamua Object
+The Planet 9 Theory
+The Moon Hollow Theory
+The Solar Warden Theory
+The Project Blue Beam
+The Project Highjump
+The Admiral Byrd Diary
+The Hollow Earth Theory
+The Agartha Network
+The Denver Airport Conspiracy
+The Georgia Guidestones
+The Bohemian Grove
+The Vatican Secret Archives
+The Chronovisor Time Machine
+The Die Glocke Nazi Bell
+The Yamashita's Gold
+The Amber Room Treasure
+The Lost Colony of Roanoke
+The Mary Celeste Ghost Ship
+The Ourang Medan Distress Call
+The Eilean Mor Lighthouse Keepers
+The Flannan Isles Mystery
+The SS Waratah
+The Carroll A. Deering
+The MV Joyita
+The Kaz II Ghost Yacht
+The Highball Signal
+The Numbers Station UVB-76
+The Numbers Station Lincolnshire Poacher
+The Numbers Station Cherry Ripe
+The Backward Music Station
+The Yosemite Sam Station
+The Max Headroom Hacker Identity
+The Captain Midnight Hijack
+The Southern Television Broadcast Intrusion
+The Wyoming Incident
+The Incident at Lake Baikal
+The Khamar Daban Incident
+The Terry Lovelace Abduction
+The Travis Walton Incident
+The Betty and Barney Hill Case
+The Pascagoula Abduction
+The Ariel School Phenomenon
+The Westall UFO Incident
+The Valentich Disappearance
+The Men in Black Real Accounts
+The Indrid Cold Mothman
+The Flatwoods Monster
+The Kelly-Hopkinsville Goblins
+The Beast of Gevaudan
+The Skinwalker Ranch
+The Bridgewater Triangle
+The Bennington Triangle
+The Alaska Triangle
+The Zone of Silence Mexico
+The Hoia Baciu Forest
+The Aokigahara Forest
+The Island of the Dolls
+The Poveglia Island
+The Stanley Hotel
+The Winchester Mystery House
+The Amityville Horror Truth
+The Enfield Poltergeist
+The Bell Witch
+The Smurl Haunting
+The Snedeker House
+The Perron Family Haunting
+The Whaley House
+The Myrtles Plantation
+The Ancient Ram Inn
+The Tower of London Ghosts
+The Eastern State Penitentiary
+The Alcatraz 14D
+The Waverly Hills Sanatorium
+The Trans-Allegheny Lunatic Asylum
+The Pennhurst Asylum
+The Byberry Mental Hospital
+The Danvers State Hospital
+The Rolling Hills Asylum
+The Villisca Axe Murder House
+The Lizzie Borden House
+The Sallie House
+The Lemp Mansion
+The McPike Mansion
+The Kreischer Mansion
+The Franklin Castle
+The S.K. Pierce Mansion
+The H.H. Holmes Murder Castle
+The LaLaurie Mansion
+The Corpsewood Manor
+The Congelier House
+The Riddle House
+The Sorrel-Weed House
+The Kehoe House
+The Hampton Lillibridge House
+The Mercer-Williams House
+The Owens-Thomas House
