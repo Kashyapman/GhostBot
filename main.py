@@ -10,7 +10,7 @@ import random
 import requests
 import json
 import re
-import asyncio  # <--- FIXED: Added this missing import
+import asyncio
 import soundfile as sf
 import numpy as np
 from kokoro_onnx import Kokoro
@@ -25,30 +25,27 @@ GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 MODE = os.environ.get("VIDEO_MODE", "Short")
+VOICE_ID = "am_adam" 
 
-# --- KOKORO VOICE SETTINGS ---
-# 'bm_lewis' is a deep, calm American male voice perfect for horror.
-VOICE_ID = "bm_lewis" 
+# --- FILES ---
+TOPICS_FILE = "topics.txt"
+LONG_QUEUE_FILE = "long_form_queue.txt"
 
 SFX_MAP = {
     "scream": "scream.mp3", "screaming": "scream.mp3", "shout": "scream.mp3",
     "knock": "knock.mp3", "banging": "knock.mp3",
     "footsteps": "footsteps.mp3", "walking": "footsteps.mp3", "running": "footsteps.mp3",
     "thud": "thud.mp3", "slam": "thud.mp3", "fell": "thud.mp3",
-    "whisper": "whisper.mp3", "voice": "whisper.mp3", "hear": "whisper.mp3"
+    "whisper": "whisper.mp3", "voice": "whisper.mp3", "hear": "whisper.mp3",
+    "static": "static.mp3", "glitch": "static.mp3"
 }
 
 def download_kokoro_model():
-    """
-    Downloads the Kokoro model files (ONNX + Voices) automatically.
-    """
     print("🧠 Downloading Kokoro AI Model...")
-    
     files = {
         "kokoro-v0_19.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx",
         "voices.json": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json"
     }
-    
     for filename, url in files.items():
         if not os.path.exists(filename):
             print(f"   Downloading {filename}...")
@@ -71,22 +68,36 @@ def get_dynamic_model_url():
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
 
 def generate_script(topic):
-    print(f"Asking AI Director about: {topic}...")
+    print(f"Asking AI Researcher about: {topic} ({MODE} Mode)...")
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
-    max_words = "140" if MODE == "Short" else "300"
-    
-    prompt_text = f"""
-    You are a horror audio director. Write a script for a {MODE} video about: '{topic}'.
-    
-    CRITICAL: Write in PLAIN TEXT. No XML. No SSML.
-    INSTRUCTION: Use natural punctuation (...) for pauses.
-    INSTRUCTION: Include these words naturally for SFX: 'knock', 'scream', 'footsteps', 'whisper'.
-    
-    Tone: Deep, ominous, slow.
-    Max {max_words} words.
-    """
+    # --- INTELLIGENT PROMPTING ---
+    if MODE == "Short":
+        # CLIFFHANGER PROMPT
+        prompt_text = f"""
+        You are a mystery storyteller. Write a TEASER script for a YouTube Short about: '{topic}'.
+        
+        RULES:
+        1. Tell the beginning of the mystery (the "Hook").
+        2. Build extreme suspense.
+        3. DO NOT reveal the answer.
+        4. ENDING: You MUST end with exactly: "But what they found next changed everything... Subscribe for Part 2."
+        5. Tone: Fast, urgent, shocking.
+        6. Max 130 words.
+        7. Plain text only. Use '...' for pauses.
+        """
+    else:
+        # FULL STORY PROMPT (Long Video)
+        prompt_text = f"""
+        You are a deep-dive investigation journalist. Write a FULL SCRIPT for a video about: '{topic}'.
+        
+        RULES:
+        1. Cover the entire story: The Hook, The Details, The Theories, and The Conclusion.
+        2. Tone: Serious, documentary style (like 'LEMMiNO' or 'Barely Sociable').
+        3. Max 350 words.
+        4. Plain text only. Use '...' for pauses.
+        """
     
     data = { "contents": [{ "parts": [{"text": prompt_text}] }] }
     try:
@@ -105,9 +116,7 @@ def add_smart_sfx(voice_clip, script_text):
     words = clean_text.split()
     total_words = len(words)
     sfx_clips = []
-    
     if total_words < 5: return []
-    
     for index, word in enumerate(words):
         if word in SFX_MAP:
             sfx_path = os.path.join("sfx", SFX_MAP[word])
@@ -117,57 +126,79 @@ def add_smart_sfx(voice_clip, script_text):
                 sfx_clips.append(sfx)
     return sfx_clips
 
+def manage_topics():
+    """
+    The Brain: Decides which topic to pick based on Short vs Long mode.
+    """
+    selected_topic = None
+    
+    # ensure files exist
+    if not os.path.exists(TOPICS_FILE): open(TOPICS_FILE, 'w').close()
+    if not os.path.exists(LONG_QUEUE_FILE): open(LONG_QUEUE_FILE, 'w').close()
+
+    if MODE == "Long":
+        # PRIORITY 1: Check the Long Queue (Topics that were already Shorts)
+        with open(LONG_QUEUE_FILE, 'r') as f:
+            long_candidates = [l.strip() for l in f.readlines() if l.strip()]
+        
+        if long_candidates:
+            selected_topic = long_candidates[0]
+            # Remove from queue (It's done now)
+            with open(LONG_QUEUE_FILE, 'w') as f:
+                for t in long_candidates[1:]: f.write(t + "\n")
+            print(f"✅ Found topic in Long Queue: {selected_topic}")
+            return selected_topic
+            
+    # PRIORITY 2: If Short Mode OR Long Queue is empty, take new topic
+    with open(TOPICS_FILE, 'r') as f:
+        new_candidates = [l.strip() for l in f.readlines() if l.strip()]
+        
+    if new_candidates:
+        selected_topic = new_candidates[0]
+        # Remove from Main List
+        with open(TOPICS_FILE, 'w') as f:
+            for t in new_candidates[1:]: f.write(t + "\n")
+            
+        # IF SHORT: Save it to Long Queue for later
+        if MODE == "Short":
+            print(f"📌 Saving '{selected_topic}' to Long Queue for later.")
+            with open(LONG_QUEUE_FILE, 'a') as f:
+                f.write(selected_topic + "\n")
+                
+        return selected_topic
+
+    return "The Mystery of the Unknown" # Fallback
+
 async def main_pipeline():
-    # 0. SETUP KOKORO
     download_kokoro_model()
     kokoro = Kokoro("kokoro-v0_19.onnx", "voices.json")
 
-    # 1. READ TOPIC
-    current_topic = "The mystery of the dark forest" 
-    try:
-        with open("topics.txt", "r") as f:
-            lines = f.readlines()
-        topics = [line.strip() for line in lines if line.strip()]
-        if topics:
-            current_topic = topics[0]
-            with open("topics.txt", "w") as f:
-                for t in topics[1:]: f.write(t + "\n")
-            print(f"✅ Selected Topic: {current_topic}")
-        else:
-            print("⚠️ No topics left! Using fallback.")
-    except FileNotFoundError:
-        print("⚠️ topics.txt not found! Using fallback.")
+    # 1. SMART TOPIC SELECTION
+    current_topic = manage_topics()
+    print(f"🎬 Processing Topic: {current_topic}")
 
     # 2. GENERATE SCRIPT
     script_text = generate_script(current_topic)
-    if not script_text: 
-        script_text = f"I cannot explain what I saw in {current_topic}. It was beyond human understanding."
-
+    if not script_text: script_text = f"Mystery: {current_topic}"
     print(f"📝 Script Preview: {script_text[:50]}...")
     
-    # 3. GENERATE VOICE (THE KOKORO WAY)
-    print("🎙️ Generating High-Fidelity Voice...")
+    # 3. GENERATE VOICE
+    print(f"🎙️ Generating Voice ({VOICE_ID})...")
     try:
-        # Generate raw audio samples
         samples, sample_rate = kokoro.create(
-            script_text, 
-            voice=VOICE_ID, 
-            speed=0.9, 
-            lang="en-us"
+            script_text, voice=VOICE_ID, speed=0.95, lang="en-us"
         )
-        # Save as WAV
         sf.write("voice.wav", samples, sample_rate)
-        print("✅ Audio Generated successfully.")
     except Exception as e:
         print(f"❌ Kokoro Failed: {e}")
         return None, None, None
     
     # 4. GET VISUALS
     print("🎬 Downloading Video...")
-    search_query = "scary dark thriller"
+    search_query = "mystery investigation dark document classified"
     headers = {"Authorization": PEXELS_KEY}
     orientation = 'portrait' if MODE == 'Short' else 'landscape'
-    clip_count = 3 if MODE == 'Short' else 5
+    clip_count = 3 if MODE == 'Short' else 6 # More clips for long videos
     url = f"https://api.pexels.com/videos/search?query={search_query}&per_page={clip_count}&orientation={orientation}"
     
     r = requests.get(url, headers=headers)
@@ -176,9 +207,8 @@ async def main_pipeline():
         video_data = r.json()
         if video_data.get('videos'):
             for i, video in enumerate(video_data['videos']):
-                video_files = video['video_files']
-                video_files.sort(key=lambda x: x['width'], reverse=True)
-                target = video_files[0]
+                target = video['video_files'][0] # Take highest quality available
+                # Filter for manageable file size if needed, but usually fine
                 with open(f"temp_{i}.mp4", "wb") as f:
                     f.write(requests.get(target['link']).content)
                 try: video_clips.append(VideoFileClip(f"temp_{i}.mp4"))
@@ -189,16 +219,14 @@ async def main_pipeline():
     # 5. MIXING
     print("✂️ Mixing Audio Layers...")
     try:
-        voice_clip = AudioFileClip("voice.wav") # Note: .wav extension
+        voice_clip = AudioFileClip("voice.wav")
         
-        # MUSIC LAYER
         music_folder = "music"
         music_files = []
         if os.path.exists(music_folder):
             music_files = [f for f in os.listdir(music_folder) if f.endswith(".mp3")]
         
         audio_layers = [voice_clip]
-        
         if music_files:
             music_path = os.path.join(music_folder, random.choice(music_files))
             music_clip = AudioFileClip(music_path)
@@ -212,7 +240,6 @@ async def main_pipeline():
         
         final_audio = CompositeAudioClip(audio_layers)
 
-        # VIDEO STITCHING
         final_clips = []
         current_duration = 0
         while current_duration < voice_clip.duration:
@@ -245,7 +272,7 @@ async def main_pipeline():
         for i in range(len(video_clips)): 
             if os.path.exists(f"temp_{i}.mp4"): os.remove(f"temp_{i}.mp4")
             
-        return output_file, current_topic, f"Thriller story about {current_topic}"
+        return output_file, current_topic, f"Mystery: {current_topic}"
         
     except Exception as e:
         print(f"❌ Editing Failed: {e}")
@@ -258,7 +285,7 @@ def upload_to_youtube(file_path, title, description):
         creds_dict = json.loads(YOUTUBE_TOKEN_VAL)
         creds = Credentials.from_authorized_user_info(creds_dict)
         youtube = build('youtube', 'v3', credentials=creds)
-        tags = ["shorts", "horror"] if MODE == "Short" else ["horror", "thriller", "mystery", "documentary"]
+        tags = ["shorts", "mystery", "conspiracy", "scary", "facts"]
         request = youtube.videos().insert(
             part="snippet,status",
             body={
