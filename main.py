@@ -10,6 +10,7 @@ import random
 import requests
 import json
 import re
+import asyncio  # <--- FIXED: Added this missing import
 import soundfile as sf
 import numpy as np
 from kokoro_onnx import Kokoro
@@ -27,7 +28,6 @@ MODE = os.environ.get("VIDEO_MODE", "Short")
 
 # --- KOKORO VOICE SETTINGS ---
 # 'bm_lewis' is a deep, calm American male voice perfect for horror.
-# 'am_adam' is another option.
 VOICE_ID = "bm_lewis" 
 
 SFX_MAP = {
@@ -41,7 +41,6 @@ SFX_MAP = {
 def download_kokoro_model():
     """
     Downloads the Kokoro model files (ONNX + Voices) automatically.
-    This is the 'Deep Research' magic - running a high-end AI locally.
     """
     print("🧠 Downloading Kokoro AI Model...")
     
@@ -78,7 +77,6 @@ def generate_script(topic):
     
     max_words = "140" if MODE == "Short" else "300"
     
-    # NOTE: Kokoro doesn't need SSML tags. It needs natural punctuation.
     prompt_text = f"""
     You are a horror audio director. Write a script for a {MODE} video about: '{topic}'.
     
@@ -114,7 +112,6 @@ def add_smart_sfx(voice_clip, script_text):
         if word in SFX_MAP:
             sfx_path = os.path.join("sfx", SFX_MAP[word])
             if os.path.exists(sfx_path):
-                # 0.9 factor to prevent SFX from playing after voice ends
                 est_time = (index / total_words) * (voice_clip.duration * 0.9)
                 sfx = AudioFileClip(sfx_path).set_start(est_time).volumex(0.6)
                 sfx_clips.append(sfx)
@@ -151,14 +148,14 @@ async def main_pipeline():
     # 3. GENERATE VOICE (THE KOKORO WAY)
     print("🎙️ Generating High-Fidelity Voice...")
     try:
-        # Kokoro generates raw audio samples
+        # Generate raw audio samples
         samples, sample_rate = kokoro.create(
             script_text, 
             voice=VOICE_ID, 
-            speed=0.9, # 0.9 = Slightly slower/scarier
+            speed=0.9, 
             lang="en-us"
         )
-        # Save as WAV using soundfile
+        # Save as WAV
         sf.write("voice.wav", samples, sample_rate)
         print("✅ Audio Generated successfully.")
     except Exception as e:
