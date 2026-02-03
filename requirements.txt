@@ -8,3 +8,7 @@ numpy<2.0.0
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
+git+https://github.com/huggingface/parler-tts.git
+torch
+soundfile
+scipy
