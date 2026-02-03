@@ -2,8 +2,16 @@ name: 4x Daily Horror Bot
 
 on:
   schedule:
-    # Runs at 8am, 12pm, 4pm, 8pm UTC automatically
-    - cron: '0 8,12,16,20 * * *'
+    # --- ANTI-BAN SCHEDULE (IST TIMINGS) ---
+    # We use "Weird Minutes" to look less robotic.
+    
+    # Run 1: 12:48 PM IST (07:18 UTC) - Safe for Afternoon Upload
+    - cron: '18 7 * * *'
+    
+    # Run 2: 08:42 PM IST (15:12 UTC) - Safe for Evening Upload
+    # Uncomment the line below ONLY after 3 more safe days:
+    # - cron: '12 15 * * *'
+    
   workflow_dispatch:
     inputs:
       manual_mode:
@@ -47,15 +55,10 @@ jobs:
              echo "VIDEO_MODE=${{ inputs.manual_mode }}" >> $GITHUB_ENV
              echo "Manual Run detected. Mode: ${{ inputs.manual_mode }}"
           else
-             hour=$(date -u +%H)
-             # At 12:00 and 20:00 UTC, make Long videos. Otherwise Shorts.
-             if [ "$hour" -eq "12" ] || [ "$hour" -eq "20" ]; then
-               echo "VIDEO_MODE=Long" >> $GITHUB_ENV
-               echo "Scheduled Run. Mode: Long"
-             else
-               echo "VIDEO_MODE=Short" >> $GITHUB_ENV
-               echo "Scheduled Run. Mode: Short"
-             fi
+             # AUTOMATIC MODE:
+             # Even if the schedule triggers, we force "Short" mode for now to be safe.
+             # Once your channel is established, you can change this back to the hourly logic.
+             echo "VIDEO_MODE=Short" >> $GITHUB_ENV
           fi
 
       - name: Run Bot (Generate Video)
@@ -67,11 +70,9 @@ jobs:
         run: python main.py
 
       - name: Commit and Push Queue Updates
-        # Saves BOTH the main topic list and the long-form queue
         run: |
           git config --global user.name 'GhostBot'
           git config --global user.email 'ghostbot@noreply.github.com'
-          # Add all text files so new queues are tracked automatically
           git add topics.txt long_form_queue.txt
           git commit -m "Updated video queues and topic lists" || echo "No changes to commit"
           git push
