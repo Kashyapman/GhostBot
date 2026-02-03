@@ -11,9 +11,11 @@ import requests
 import json
 import re
 import asyncio
+import torch
 import soundfile as sf
 import numpy as np
-from kokoro_onnx import Kokoro
+from parler_tts import ParlerTTSForConditionalGeneration
+from transformers import AutoTokenizer
 from moviepy.editor import *
 from moviepy.audio.fx.all import audio_loop
 from google.oauth2.credentials import Credentials
@@ -25,11 +27,14 @@ GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 MODE = os.environ.get("VIDEO_MODE", "Short")
-VOICE_ID = "am_adam" # Best horror/thriller voice
 
 # --- FILES ---
 TOPICS_FILE = "topics.txt"
 LONG_QUEUE_FILE = "long_form_queue.txt"
+
+# --- THE "DEEP VOICE" MASTER PROMPT ---
+# This ensures the actor stays the same (The voice you liked).
+BASE_VOICE = "A very deep, slow, monotonic male voice. The tone is terrifying, high-quality, and close to the microphone."
 
 SFX_MAP = {
     "scream": "scream.mp3", "screaming": "scream.mp3", "shout": "scream.mp3",
@@ -40,20 +45,12 @@ SFX_MAP = {
     "static": "static.mp3", "glitch": "static.mp3"
 }
 
-def download_kokoro_model():
-    print("🧠 Downloading Kokoro AI Model...")
-    files = {
-        "kokoro-v0_19.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx",
-        "voices.json": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json"
-    }
-    for filename, url in files.items():
-        if not os.path.exists(filename):
-            print(f"   Downloading {filename}...")
-            r = requests.get(url, stream=True)
-            with open(filename, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-    print("✅ Model Ready.")
+# --- GLOBAL AI MODELS (Load once to save time) ---
+print("⏳ Loading Parler-TTS (This may take 2-3 mins)...")
+device = "cpu" # GitHub Actions doesn't have GPU, so we force CPU
+model = ParlerTTSForConditionalGeneration.from_pretrained("parler-tts/parler-tts-mini-v1").to(device)
+tokenizer = AutoTokenizer.from_pretrained("parler-tts/parler-tts-mini-v1")
+print("✅ AI Loaded.")
 
 def get_dynamic_model_url():
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
@@ -67,36 +64,30 @@ def get_dynamic_model_url():
     except: pass
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
 
-def generate_script(topic):
+def generate_script_data(topic):
     print(f"Asking AI Director about: {topic} ({MODE} Mode)...")
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
-    if MODE == "Short":
-        # CLIFFHANGER PROMPT
-        prompt_text = f"""
-        You are a mystery storyteller. Write a TEASER script for a YouTube Short about: '{topic}'.
-        
-        RULES:
-        1. Tell the beginning of the mystery (the "Hook").
-        2. Build extreme suspense.
-        3. DO NOT reveal the answer.
-        4. ENDING: You MUST end with exactly: "But what they found next changed everything... Subscribe for Part 2."
-        5. Tone: Fast, urgent, shocking.
-        6. Max 130 words.
-        7. Plain text only. Use '...' for pauses.
-        """
-    else:
-        # FULL STORY PROMPT
-        prompt_text = f"""
-        You are a deep-dive investigation journalist. Write a FULL SCRIPT for a video about: '{topic}'.
-        
-        RULES:
-        1. Cover the entire story: The Hook, The Details, The Theories, and The Conclusion.
-        2. Tone: Serious, documentary style (like 'LEMMiNO' or 'Barely Sociable').
-        3. Max 350 words.
-        4. Plain text only. Use '...' for pauses.
-        """
+    # --- EMOTION-AWARE PROMPT ---
+    prompt_text = f"""
+    You are a horror director. Write a script for a YouTube Short about: '{topic}'.
+    
+    OUTPUT FORMAT: JSON ONLY.
+    {{
+        "lines": [
+            {{ "text": "It was 1954...", "emotion": "neutral" }},
+            {{ "text": "But the room was EMPTY!", "emotion": "fear" }},
+            {{ "text": "He was never seen again.", "emotion": "ominous" }}
+        ]
+    }}
+
+    RULES:
+    1. "neutral" = The standard deep narration.
+    2. "fear" = Urgent, slightly faster (but keep deep voice).
+    3. "ominous" = Very slow, whispering.
+    4. Max 100 words (Keep it short because AI generation is slow).
+    """
     
     data = { "contents": [{ "parts": [{"text": prompt_text}] }] }
     try:
@@ -105,7 +96,8 @@ def generate_script(topic):
             result = response.json()
             if 'candidates' in result:
                 raw = result['candidates'][0]['content']['parts'][0]['text']
-                return raw.replace("*", "").strip()
+                clean_json = raw.replace("```json", "").replace("```", "").strip()
+                return json.loads(clean_json)
     except Exception as e:
         print(f"Gemini Error: {e}")
     return None
@@ -116,12 +108,12 @@ def generate_metadata(topic, script_text):
     headers = {'Content-Type': 'application/json'}
     
     prompt_text = f"""
-    You are a YouTube SEO Expert. Topic: '{topic}'. Script: '{script_text[:200]}...'.
+    You are a YouTube SEO Expert. Topic: '{topic}'. Script: '{script_text[:150]}...'.
     
     OUTPUT FORMAT: JSON ONLY.
     {{
       "title": "Viral Clickbait Title (Use ALL CAPS for 1 word)",
-      "description": "3 sentences with keywords.",
+      "description": "3 sentences with hashtags.",
       "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
     }}
     """
@@ -141,11 +133,49 @@ def generate_metadata(topic, script_text):
     return {
         "title": f"The Mystery of {topic}",
         "description": f"A short documentary about {topic}.",
-        "tags": ["mystery", "scary", "horror", "facts"]
+        "tags": ["mystery", "scary", "horror"]
     }
 
-def add_smart_sfx(voice_clip, script_text):
-    clean_text = re.sub(r'[^\w\s]', '', script_text).lower()
+def generate_parler_audio(script_data, filename="voice.wav"):
+    print(f"🎙️ Generating High-Fidelity Audio (Parler-TTS)...")
+    final_audio_list = []
+    sample_rate = model.config.sampling_rate
+
+    for i, line in enumerate(script_data.get("lines", [])):
+        text = line["text"]
+        emotion = line.get("emotion", "neutral")
+        
+        # --- THE CHARACTER LOCK ---
+        # We start with the BASE_VOICE (The Deep Guy) and append the emotion.
+        # This keeps the identity consistent.
+        if emotion == "fear":
+            description = BASE_VOICE + " He is speaking with urgency and slight panic."
+        elif emotion == "ominous":
+            description = BASE_VOICE + " He is whispering very slowly."
+        else:
+            description = BASE_VOICE + " He is narrating calmly."
+
+        print(f"   Generating Line {i+1}: {emotion}...")
+        
+        # Parler Generation Logic
+        input_ids = tokenizer(description, return_tensors="pt").input_ids.to(device)
+        prompt_input_ids = tokenizer(text, return_tensors="pt").input_ids.to(device)
+        
+        generation = model.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids)
+        audio_arr = generation.cpu().numpy().squeeze()
+        final_audio_list.append(audio_arr)
+        
+        # Add slight pause between lines (0.3s silence)
+        silence = np.zeros(int(sample_rate * 0.3))
+        final_audio_list.append(silence)
+
+    # Stitch it all together
+    full_audio = np.concatenate(final_audio_list)
+    sf.write(filename, full_audio, sample_rate)
+    print("✅ Full Voiceover Ready.")
+
+def add_smart_sfx(voice_clip, script_full_text):
+    clean_text = re.sub(r'[^\w\s]', '', script_full_text).lower()
     words = clean_text.split()
     total_words = len(words)
     sfx_clips = []
@@ -171,7 +201,6 @@ def manage_topics():
             selected_topic = long_candidates[0]
             with open(LONG_QUEUE_FILE, 'w') as f:
                 for t in long_candidates[1:]: f.write(t + "\n")
-            print(f"✅ Found topic in Long Queue: {selected_topic}")
             return selected_topic
             
     with open(TOPICS_FILE, 'r') as f:
@@ -188,41 +217,28 @@ def manage_topics():
     return "The Unknown"
 
 async def main_pipeline():
-    # --- ANTI-BAN HUMANIZATION PROTOCOL ---
     print("🛡️ Engaging Anti-Ban Protocols...")
-    # This random sleep makes every upload happen at a unique time.
-    # It waits between 5 minutes (300s) and 25 minutes (1500s).
     sleep_seconds = random.randint(300, 1500) 
-    print(f"😴 Humanizing: Waiting {sleep_seconds // 60} minutes before starting...")
+    print(f"😴 Humanizing: Waiting {sleep_seconds // 60} minutes...")
     await asyncio.sleep(sleep_seconds)
-    # --------------------------------------
-
-    download_kokoro_model()
-    kokoro = Kokoro("kokoro-v0_19.onnx", "voices.json")
 
     # 1. TOPIC
     current_topic = manage_topics()
     print(f"🎬 Processing Topic: {current_topic}")
 
     # 2. SCRIPT
-    script_text = generate_script(current_topic)
-    if not script_text: script_text = f"Mystery: {current_topic}"
-    print(f"📝 Script Preview: {script_text[:50]}...")
+    script_data = generate_script_data(current_topic)
+    if not script_data: return None, None
+        
+    full_script_text = " ".join([l["text"] for l in script_data["lines"]])
+    print(f"📝 Script Preview: {full_script_text[:50]}...")
     
     # 3. METADATA
-    metadata = generate_metadata(current_topic, script_text)
+    metadata = generate_metadata(current_topic, full_script_text)
     
-    # 4. VOICE
-    print(f"🎙️ Generating Voice ({VOICE_ID})...")
-    try:
-        samples, sample_rate = kokoro.create(
-            script_text, voice=VOICE_ID, speed=0.95, lang="en-us"
-        )
-        sf.write("voice.wav", samples, sample_rate)
-    except Exception as e:
-        print(f"❌ Kokoro Failed: {e}")
-        return None, None
-
+    # 4. VOICE (The New Parler Engine)
+    generate_parler_audio(script_data, "voice.wav")
+    
     # 5. VISUALS
     print("🎬 Downloading Video...")
     search_query = "mystery investigation dark document classified"
@@ -264,7 +280,7 @@ async def main_pipeline():
             music_clip = music_clip.subclip(0, voice_clip.duration).volumex(0.25)
             audio_layers.append(music_clip)
             
-        sfx_clips = add_smart_sfx(voice_clip, script_text)
+        sfx_clips = add_smart_sfx(voice_clip, full_script_text)
         audio_layers.extend(sfx_clips)
         
         final_audio = CompositeAudioClip(audio_layers)
