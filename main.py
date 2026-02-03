@@ -25,7 +25,7 @@ GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 MODE = os.environ.get("VIDEO_MODE", "Short")
-VOICE_ID = "am_adam" 
+VOICE_ID = "am_adam" # Best horror/thriller voice
 
 # --- FILES ---
 TOPICS_FILE = "topics.txt"
@@ -68,13 +68,15 @@ def get_dynamic_model_url():
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
 
 def generate_script(topic):
-    print(f"Asking AI Researcher about: {topic} ({MODE} Mode)...")
+    print(f"Asking AI Director about: {topic} ({MODE} Mode)...")
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
     if MODE == "Short":
+        # CLIFFHANGER PROMPT
         prompt_text = f"""
         You are a mystery storyteller. Write a TEASER script for a YouTube Short about: '{topic}'.
+        
         RULES:
         1. Tell the beginning of the mystery (the "Hook").
         2. Build extreme suspense.
@@ -85,11 +87,13 @@ def generate_script(topic):
         7. Plain text only. Use '...' for pauses.
         """
     else:
+        # FULL STORY PROMPT
         prompt_text = f"""
         You are a deep-dive investigation journalist. Write a FULL SCRIPT for a video about: '{topic}'.
+        
         RULES:
         1. Cover the entire story: The Hook, The Details, The Theories, and The Conclusion.
-        2. Tone: Serious, documentary style.
+        2. Tone: Serious, documentary style (like 'LEMMiNO' or 'Barely Sociable').
         3. Max 350 words.
         4. Plain text only. Use '...' for pauses.
         """
@@ -107,21 +111,18 @@ def generate_script(topic):
     return None
 
 def generate_metadata(topic, script_text):
-    """
-    The SEO Agent: Generates viral Title, Description, and Tags.
-    """
     print("📈 Generating Viral Metadata (SEO)...")
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
     prompt_text = f"""
-    You are a YouTube SEO Expert. Based on this topic: '{topic}' and script: '{script_text[:200]}...', generate metadata.
+    You are a YouTube SEO Expert. Topic: '{topic}'. Script: '{script_text[:200]}...'.
     
     OUTPUT FORMAT: JSON ONLY.
     {{
-      "title": "Write a clickbait, viral title (under 90 chars). Use ALL CAPS for one power word. Example: The SHOCKING Truth about...",
-      "description": "Write a 3-line engaging description with keywords.",
-      "tags": ["tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9", "tag10"]
+      "title": "Viral Clickbait Title (Use ALL CAPS for 1 word)",
+      "description": "3 sentences with keywords.",
+      "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
     }}
     """
     
@@ -132,17 +133,15 @@ def generate_metadata(topic, script_text):
             result = response.json()
             if 'candidates' in result:
                 raw = result['candidates'][0]['content']['parts'][0]['text']
-                # Clean JSON
                 clean_json = raw.replace("```json", "").replace("```", "").strip()
                 return json.loads(clean_json)
     except Exception as e:
         print(f"Metadata Error: {e}")
     
-    # Fallback if AI fails
     return {
-        "title": f"The Mystery of {topic} #shorts",
-        "description": f"A short documentary about {topic}. #mystery #conspiracy",
-        "tags": ["mystery", "scary", "horror", "facts", "documentary"]
+        "title": f"The Mystery of {topic}",
+        "description": f"A short documentary about {topic}.",
+        "tags": ["mystery", "scary", "horror", "facts"]
     }
 
 def add_smart_sfx(voice_clip, script_text):
@@ -186,9 +185,18 @@ def manage_topics():
                 f.write(selected_topic + "\n")
         return selected_topic
 
-    return "The Mystery of the Unknown"
+    return "The Unknown"
 
 async def main_pipeline():
+    # --- ANTI-BAN HUMANIZATION PROTOCOL ---
+    print("🛡️ Engaging Anti-Ban Protocols...")
+    # This random sleep makes every upload happen at a unique time.
+    # It waits between 5 minutes (300s) and 25 minutes (1500s).
+    sleep_seconds = random.randint(300, 1500) 
+    print(f"😴 Humanizing: Waiting {sleep_seconds // 60} minutes before starting...")
+    await asyncio.sleep(sleep_seconds)
+    # --------------------------------------
+
     download_kokoro_model()
     kokoro = Kokoro("kokoro-v0_19.onnx", "voices.json")
 
@@ -201,9 +209,8 @@ async def main_pipeline():
     if not script_text: script_text = f"Mystery: {current_topic}"
     print(f"📝 Script Preview: {script_text[:50]}...")
     
-    # 3. METADATA (NEW STEP)
+    # 3. METADATA
     metadata = generate_metadata(current_topic, script_text)
-    print(f"🏷️ Generated Title: {metadata['title']}")
     
     # 4. VOICE
     print(f"🎙️ Generating Voice ({VOICE_ID})...")
@@ -215,7 +222,7 @@ async def main_pipeline():
     except Exception as e:
         print(f"❌ Kokoro Failed: {e}")
         return None, None
-    
+
     # 5. VISUALS
     print("🎬 Downloading Video...")
     search_query = "mystery investigation dark document classified"
@@ -308,21 +315,17 @@ def upload_to_youtube(file_path, metadata):
         creds = Credentials.from_authorized_user_info(creds_dict)
         youtube = build('youtube', 'v3', credentials=creds)
         
-        # USE DYNAMIC METADATA
         title = metadata['title']
         if MODE == "Short" and "#shorts" not in title.lower():
             title += " #shorts"
             
-        description = metadata['description'] + "\n\n#mystery #conspiracy"
-        tags = metadata['tags']
-        
         request = youtube.videos().insert(
             part="snippet,status",
             body={
                 "snippet": {
                     "title": title[:100], 
-                    "description": description[:4500],
-                    "tags": tags, 
+                    "description": metadata['description'][:4500],
+                    "tags": metadata['tags'], 
                     "categoryId": "24" 
                 },
                 "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
