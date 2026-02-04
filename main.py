@@ -11,11 +11,7 @@ import requests
 import json
 import re
 import asyncio
-import torch
-import soundfile as sf
-import numpy as np
-from parler_tts import ParlerTTSForConditionalGeneration
-from transformers import AutoTokenizer
+import edge_tts
 from moviepy.editor import *
 from moviepy.audio.fx.all import audio_loop
 from google.oauth2.credentials import Credentials
@@ -32,10 +28,6 @@ MODE = os.environ.get("VIDEO_MODE", "Short")
 TOPICS_FILE = "topics.txt"
 LONG_QUEUE_FILE = "long_form_queue.txt"
 
-# --- THE "DEEP VOICE" MASTER PROMPT ---
-# This ensures the actor stays the same (The voice you liked).
-BASE_VOICE = "A very deep, slow, monotonic male voice. The tone is terrifying, high-quality, and close to the microphone."
-
 SFX_MAP = {
     "scream": "scream.mp3", "screaming": "scream.mp3", "shout": "scream.mp3",
     "knock": "knock.mp3", "banging": "knock.mp3",
@@ -44,13 +36,6 @@ SFX_MAP = {
     "whisper": "whisper.mp3", "voice": "whisper.mp3", "hear": "whisper.mp3",
     "static": "static.mp3", "glitch": "static.mp3"
 }
-
-# --- GLOBAL AI MODELS (Load once to save time) ---
-print("⏳ Loading Parler-TTS (This may take 2-3 mins)...")
-device = "cpu" # GitHub Actions doesn't have GPU, so we force CPU
-model = ParlerTTSForConditionalGeneration.from_pretrained("parler-tts/parler-tts-mini-v1").to(device)
-tokenizer = AutoTokenizer.from_pretrained("parler-tts/parler-tts-mini-v1")
-print("✅ AI Loaded.")
 
 def get_dynamic_model_url():
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
@@ -69,24 +54,25 @@ def generate_script_data(topic):
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
-    # --- EMOTION-AWARE PROMPT ---
+    # --- MULTI-CAST SCRIPT ---
     prompt_text = f"""
-    You are a horror director. Write a script for a YouTube Short about: '{topic}'.
+    You are a horror radio drama director. Write a script for a YouTube Short about: '{topic}'.
     
     OUTPUT FORMAT: JSON ONLY.
     {{
         "lines": [
-            {{ "text": "It was 1954...", "emotion": "neutral" }},
-            {{ "text": "But the room was EMPTY!", "emotion": "fear" }},
-            {{ "text": "He was never seen again.", "emotion": "ominous" }}
+            {{ "role": "narrator", "text": "It was 1954..." }},
+            {{ "role": "victim", "text": "Wait! Who is that?" }},
+            {{ "role": "demon", "text": "You... are... mine." }}
         ]
     }}
 
-    RULES:
-    1. "neutral" = The standard deep narration.
-    2. "fear" = Urgent, slightly faster (but keep deep voice).
-    3. "ominous" = Very slow, whispering.
-    4. Max 100 words (Keep it short because AI generation is slow).
+    ROLES:
+    1. "narrator": Serious, documentary style.
+    2. "victim": Panicked, fast.
+    3. "demon": Deep, distorted.
+    
+    Max 130 words.
     """
     
     data = { "contents": [{ "parts": [{"text": prompt_text}] }] }
@@ -136,43 +122,48 @@ def generate_metadata(topic, script_text):
         "tags": ["mystery", "scary", "horror"]
     }
 
-def generate_parler_audio(script_data, filename="voice.wav"):
-    print(f"🎙️ Generating High-Fidelity Audio (Parler-TTS)...")
-    final_audio_list = []
-    sample_rate = model.config.sampling_rate
-
+async def generate_dynamic_voice(script_data, filename="voice.mp3"):
+    print(f"🎙️ Generating High-Quality Audio...")
+    clips = []
+    
     for i, line in enumerate(script_data.get("lines", [])):
         text = line["text"]
-        emotion = line.get("emotion", "neutral")
+        role = line.get("role", "narrator")
         
-        # --- THE CHARACTER LOCK ---
-        # We start with the BASE_VOICE (The Deep Guy) and append the emotion.
-        # This keeps the identity consistent.
-        if emotion == "fear":
-            description = BASE_VOICE + " He is speaking with urgency and slight panic."
-        elif emotion == "ominous":
-            description = BASE_VOICE + " He is whispering very slowly."
-        else:
-            description = BASE_VOICE + " He is narrating calmly."
+        # --- AUDIO ENGINEERING ---
+        # We use Edge-TTS but with specific pitch/rate shifts to separate characters.
+        if role == "victim":
+            voice_id = "en-US-GuyNeural"
+            rate = "+20%" 
+            pitch = "+5Hz"
+        elif role == "demon":
+            voice_id = "en-US-ChristopherNeural"
+            rate = "-30%"   # Slow down massively
+            pitch = "-20Hz" # Deepen massively
+        else: # Narrator
+            voice_id = "en-US-ChristopherNeural"
+            rate = "-5%"
+            pitch = "-5Hz"
+            
+        temp_file = f"temp_voice_{i}.mp3"
+        communicate = edge_tts.Communicate(text, voice_id, rate=rate, pitch=pitch)
+        await communicate.save(temp_file)
+        
+        if os.path.exists(temp_file):
+            clip = AudioFileClip(temp_file)
+            clips.append(clip)
+            # Add pause
+            clips.append(AudioClip(lambda t: 0, duration=0.2))
 
-        print(f"   Generating Line {i+1}: {emotion}...")
-        
-        # Parler Generation Logic
-        input_ids = tokenizer(description, return_tensors="pt").input_ids.to(device)
-        prompt_input_ids = tokenizer(text, return_tensors="pt").input_ids.to(device)
-        
-        generation = model.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids)
-        audio_arr = generation.cpu().numpy().squeeze()
-        final_audio_list.append(audio_arr)
-        
-        # Add slight pause between lines (0.3s silence)
-        silence = np.zeros(int(sample_rate * 0.3))
-        final_audio_list.append(silence)
-
-    # Stitch it all together
-    full_audio = np.concatenate(final_audio_list)
-    sf.write(filename, full_audio, sample_rate)
-    print("✅ Full Voiceover Ready.")
+    if clips:
+        final_audio = concatenate_audioclips(clips)
+        final_audio.write_audiofile(filename)
+        # Cleanup
+        for i in range(len(script_data["lines"])):
+            try: os.remove(f"temp_voice_{i}.mp3")
+            except: pass
+    else:
+        print("❌ Audio Generation Failed")
 
 def add_smart_sfx(voice_clip, script_full_text):
     clean_text = re.sub(r'[^\w\s]', '', script_full_text).lower()
@@ -236,16 +227,16 @@ async def main_pipeline():
     # 3. METADATA
     metadata = generate_metadata(current_topic, full_script_text)
     
-    # 4. VOICE (The New Parler Engine)
-    generate_parler_audio(script_data, "voice.wav")
+    # 4. VOICE (Stable Edge-TTS)
+    await generate_dynamic_voice(script_data, "voice.mp3")
     
-    # 5. VISUALS
-    print("🎬 Downloading Video...")
-    search_query = "mystery investigation dark document classified"
+    # 5. VISUALS (Fixed Static Issue)
+    print("🎬 Downloading Multiple Clips...")
+    search_query = "mystery investigation dark horror cinematic"
     headers = {"Authorization": PEXELS_KEY}
     orientation = 'portrait' if MODE == 'Short' else 'landscape'
-    clip_count = 3 if MODE == 'Short' else 6 
-    url = f"https://api.pexels.com/videos/search?query={search_query}&per_page={clip_count}&orientation={orientation}"
+    # Request 8 clips to ensure we have enough for fast cuts
+    url = f"https://api.pexels.com/videos/search?query={search_query}&per_page=8&orientation={orientation}"
     
     r = requests.get(url, headers=headers)
     video_clips = []
@@ -256,15 +247,20 @@ async def main_pipeline():
                 target = video['video_files'][0] 
                 with open(f"temp_{i}.mp4", "wb") as f:
                     f.write(requests.get(target['link']).content)
-                try: video_clips.append(VideoFileClip(f"temp_{i}.mp4"))
+                try: 
+                    clip = VideoFileClip(f"temp_{i}.mp4")
+                    # Force clip to be 4 seconds max for fast pacing
+                    if clip.duration > 4: clip = clip.subclip(0, 4)
+                    video_clips.append(clip)
                 except: pass
 
     if not video_clips: return None, None
 
-    # 6. MIXING
+    # 6. MIXING (Fixed Volume Issue)
     print("✂️ Mixing Audio Layers...")
     try:
-        voice_clip = AudioFileClip("voice.wav")
+        # Boost Voice Volume to 150%
+        voice_clip = AudioFileClip("voice.mp3").volumex(1.5)
         
         music_folder = "music"
         music_files = []
@@ -277,7 +273,8 @@ async def main_pipeline():
             music_clip = AudioFileClip(music_path)
             if music_clip.duration < voice_clip.duration:
                 music_clip = audio_loop(music_clip, duration=voice_clip.duration + 2)
-            music_clip = music_clip.subclip(0, voice_clip.duration).volumex(0.25)
+            # Lower Music Volume to 15% (Was 25%)
+            music_clip = music_clip.subclip(0, voice_clip.duration).volumex(0.15)
             audio_layers.append(music_clip)
             
         sfx_clips = add_smart_sfx(voice_clip, full_script_text)
@@ -287,34 +284,43 @@ async def main_pipeline():
 
         final_clips = []
         current_duration = 0
+        clip_index = 0
+        
+        # Loop through downloaded clips to fill time
         while current_duration < voice_clip.duration:
-            for clip in video_clips:
-                if current_duration >= voice_clip.duration: break
-                
-                if MODE == "Short":
-                    w, h = clip.size
-                    if w > h: clip = clip.crop(x1=w/2 - h*(9/16)/2, width=h*(9/16), height=h)
-                    clip = clip.resize(height=1920)
-                    clip = clip.resize(width=1080)
-                else:
-                    clip = clip.resize(height=1080)
-                    w, h = clip.size
-                    if w/h != 16/9:
-                         clip = clip.crop(x1=w/2 - (h*16/9)/2, width=h*16/9, height=h)
-                         
-                final_clips.append(clip)
-                current_duration += clip.duration
+            if clip_index >= len(video_clips): clip_index = 0 # Loop clips if we run out
+            
+            clip = video_clips[clip_index]
+            
+            if MODE == "Short":
+                w, h = clip.size
+                if w > h: clip = clip.crop(x1=w/2 - h*(9/16)/2, width=h*(9/16), height=h)
+                clip = clip.resize(height=1920)
+                clip = clip.resize(width=1080)
+            else:
+                clip = clip.resize(height=1080)
+                w, h = clip.size
+                if w/h != 16/9:
+                        clip = clip.crop(x1=w/2 - (h*16/9)/2, width=h*16/9, height=h)
+            
+            # Trim clip if it goes over audio duration
+            remaining_time = voice_clip.duration - current_duration
+            if clip.duration > remaining_time:
+                clip = clip.subclip(0, remaining_time)
+            
+            final_clips.append(clip)
+            current_duration += clip.duration
+            clip_index += 1
         
         final_video = concatenate_videoclips(final_clips, method="compose")
         final_video = final_video.set_audio(final_audio)
-        final_video = final_video.subclip(0, voice_clip.duration)
         
         output_file = "final_video.mp4"
         final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24, preset="medium")
         
         voice_clip.close()
         for clip in video_clips: clip.close()
-        for i in range(len(video_clips)): 
+        for i in range(8): # Clean up all temp files
             if os.path.exists(f"temp_{i}.mp4"): os.remove(f"temp_{i}.mp4")
             
         return output_file, metadata
