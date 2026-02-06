@@ -1,10 +1,10 @@
-
 google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2
-moviepy
+moviepy==1.0.3
 requests
 pillow
 numpy
 soundfile
 edge-tts
+decorator<5,>=4.0.2
