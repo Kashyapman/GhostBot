@@ -1,78 +1,42 @@
-name: 4x Daily Horror Bot
+name: YouTube Automation Bot
 
 on:
   schedule:
-    # --- ANTI-BAN SCHEDULE (IST TIMINGS) ---
-    # We use "Weird Minutes" to look less robotic.
-    
-    # Run 1: 12:48 PM IST (07:18 UTC) - Safe for Afternoon Upload
-    - cron: '18 7 * * *'
-    
-    # Run 2: 08:42 PM IST (15:12 UTC) - Safe for Evening Upload
-    # Uncomment the line below ONLY after 3 more safe days:
-    # - cron: '12 15 * * *'
-    
-  workflow_dispatch:
-    inputs:
-      manual_mode:
-        description: 'Video Mode (Short/Long)'
-        required: true
-        default: 'Short'
-        type: choice
-        options:
-        - Short
-        - Long
+    # Runs at 06:00 UTC (Story Mode) and 18:00 UTC (Fact Mode)
+    - cron: '0 6,18 * * *'
+  workflow_dispatch: # Allows you to run it manually from the Actions tab for testing
 
 jobs:
-  run-bot:
+  build-and-post:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # REQUIRED: Allows the bot to save queue changes
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      contents: write # Grant permission to write/commit if needed later
 
-      - name: Install System Dependencies
-        # 'espeak-ng' is REQUIRED for the Kokoro Voice AI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick espeak-ng
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.10'
+
+      - name: Install System Dependencies
+        # ffmpeg is required for MoviePy/Pydub audio processing
+        # libsndfile1 is required for the soundfile library
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libsndfile1
 
       - name: Install Python Libraries
-        run: pip install -r requirements.txt
-
-      - name: Determine Mode
-        id: mode
+        # Installs directly from your requirements.txt file
         run: |
-          # Logic to switch between Short and Long form based on time or manual input
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-             echo "VIDEO_MODE=${{ inputs.manual_mode }}" >> $GITHUB_ENV
-             echo "Manual Run detected. Mode: ${{ inputs.manual_mode }}"
-          else
-             # AUTOMATIC MODE:
-             # Even if the schedule triggers, we force "Short" mode for now to be safe.
-             # Once your channel is established, you can change this back to the hourly logic.
-             echo "VIDEO_MODE=Short" >> $GITHUB_ENV
-          fi
+          pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run Bot (Generate Video)
+      - name: Run Automation Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
-          VIDEO_MODE: ${{ env.VIDEO_MODE }}
         run: python main.py
-
-      - name: Commit and Push Queue Updates
-        run: |
-          git config --global user.name 'GhostBot'
-          git config --global user.email 'ghostbot@noreply.github.com'
-          git add topics.txt long_form_queue.txt
-          git commit -m "Updated video queues and topic lists" || echo "No changes to commit"
-          git push
