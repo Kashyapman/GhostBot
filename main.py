@@ -7,15 +7,14 @@ import requests
 import numpy as np
 import PIL.Image
 from datetime import datetime
-import pytz # You might need to add pytz to requirements.txt if not there, or use standard datetime
+import pytz 
 
-# --- FIX FOR PILLOW ERROR ---
+# --- FIX FOR PILLOW ERROR (Common in older MoviePy versions) ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 # ----------------------------
 
 from moviepy.editor import *
-from moviepy.audio.fx.all import audio_loop
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -29,18 +28,17 @@ GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 
-# --- FILES ---
-TOPICS_FILE = "topics.txt"
-
 def anti_ban_sleep():
-    sleep_seconds = random.randint(300, 2700)
+    """Random sleep to prevent YouTube spam detection."""
+    sleep_seconds = random.randint(300, 2700) # 5 to 45 minutes
     print(f"🕵️ Anti-Ban: Sleeping for {sleep_seconds // 60} minutes...")
     time.sleep(sleep_seconds)
 
 def get_dynamic_model_url():
-    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
+    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
 
 def setup_kokoro():
+    """Downloads and initializes the Kokoro TTS model."""
     print("🧠 Initializing Kokoro AI...")
     if not os.path.exists("kokoro-v0_19.onnx"):
         hf_hub_download(repo_id="hexgrad/Kokoro-82M", filename="kokoro-v0_19.onnx", local_dir=".")
@@ -49,65 +47,79 @@ def setup_kokoro():
     return Kokoro("kokoro-v0_19.onnx", "voices.json")
 
 def master_audio(file_path):
+    """Post-processing to make audio sound like a studio recording."""
     try:
         sound = AudioSegment.from_file(file_path)
+        # 1. Subtle Low Pass (Warmth)
         bass = sound.low_pass_filter(150)
         sound = sound.overlay(bass.apply_gain(-3))
+        # 2. Compression (Even volume)
         sound = compress_dynamic_range(sound, threshold=-20.0, ratio=4.0, attack=5.0, release=50.0)
+        # 3. Normalize (Loudness)
         sound = normalize(sound)
-        sound.export(file_path, format="mp3")
-    except: pass
+        sound.export(file_path, format="wav")
+    except Exception as e:
+        print(f"⚠️ Audio Mastering skipped: {e}")
 
 def get_time_based_mode():
-    # Get current hour (UTC)
+    """Decides content type based on UTC hour."""
+    # GitHub Actions runs on UTC. 
+    # 06:00 UTC = Morning | 18:00 UTC = Evening
     current_hour = datetime.now().hour
-    # If it's between 04:00 and 12:00 UTC, it's "Morning Upload"
+    print(f"🕒 Current UTC Hour: {current_hour}")
+    
     if 4 <= current_hour < 16:
-        return "STORY" # Horror/Urban Legend
+        return "STORY" # Horror/Urban Legend (Morning/Day)
     else:
-        return "FACT" # Paradox/Science
+        return "FACT" # Paradox/Science (Evening/Night)
 
 def generate_script_data(mode):
+    """Generates a viral script using Gemini 1.5 Flash."""
     print(f"🧠 AI Director Mode: {mode}")
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
     if mode == "STORY":
-        topic_prompt = "A terrifying 2-sentence horror story or urban legend."
-        style = "Scary, suspenseful, narrative."
+        topic_prompt = "A psychological horror story or 'glitch in the matrix' encounter."
+        style = "Disturbingly realistic, paranoid, suspenseful."
     else:
-        topic_prompt = "A mind-blowing scientific paradox, dark history fact, or glitch in the matrix."
-        style = "Educational, fast-paced, shocking."
+        topic_prompt = "A scientific paradox or dark history fact that sounds fake but is true."
+        style = "Fast-paced, mind-bending, shocking."
 
     prompt_text = f"""
-    You are a Viral Content Creator. Write a script for a YouTube Short about: {topic_prompt}
-    Style: {style}
+    You are an expert Viral Shorts Director. Write a script for a YouTube Short about: {topic_prompt}
     
-    CRITICAL INSTRUCTIONS:
-    1. The first visual keyword MUST be visually striking (e.g., "explosion", "screaming face", "galaxy zooming") to act as a thumbnail hook.
-    2. The Title must be Clickbait (ALL CAPS, Question, or Warning).
+    ### STRICT RETENTION RULES:
+    1. **The Hook (0-3s):** The first line MUST be a 'Scroll-Stopper'. It must be a terrifying realization, a direct challenge to the viewer, or a visual shock.
+    2. **Pacing:** Use "Glued" editing logic. No intro, no "Hello guys." Start immediately in the action.
+    3. **Tone:** {style} Make it feel grounded and realistic. Avoid cheesy tropes; focus on uncanny valley or psychological fear.
+    4. **Visuals:** The first "visual_keyword" MUST be aggressive (e.g., "scary eyes close up", "explosion", "shadow figure") to grab attention.
     
-    OUTPUT FORMAT: JSON ONLY.
+    ### REQUIRED JSON STRUCTURE:
     {{
-        "title": "SCARY TITLE HERE #shorts",
-        "description": "Engaging description with hashtags.",
-        "tags": ["viral", "shorts", "horror", "facts"],
+        "title": "CLICKBAIT TITLE HERE (ALL CAPS) #shorts",
+        "description": "2 sentence description with hashtags.",
+        "tags": ["viral", "scary", "creepy", "shorts"],
         "lines": [
             {{ 
                 "role": "narrator", 
-                "text": "Did you know you are already dead?", 
-                "visual_keyword": "skeleton skull dark" 
+                "text": "Stop. Don't look behind you.", 
+                "visual_keyword": "terrified eyes close up" 
             }},
              {{ 
                 "role": "victim", 
-                "text": "Wait, what do you mean?", 
-                "visual_keyword": "confused man looking at mirror" 
+                "text": "I heard it breathing... right there.", 
+                "visual_keyword": "dark figure in hallway" 
             }}
         ]
     }}
     
-    ROLES: "narrator" (Deep Voice), "victim" (Panicked), "demon" (Slow/Distorted).
-    Max 130 words.
+    ROLES TO USE: 
+    - "narrator" (The authority/storyteller - Deep Voice)
+    - "victim" (The person experiencing it - Panicked/Fast)
+    - "demon" (The entity - Slow/Distorted)
+
+    Constraint: Keep total script under 130 words. Make it unique. Do not use Markdown formatting.
     """
     
     data = { "contents": [{ "parts": [{"text": prompt_text}] }] }
@@ -115,61 +127,84 @@ def generate_script_data(mode):
         response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
             result = response.json()
-            raw = result['candidates'][0]['content']['parts'][0]['text']
-            clean_json = raw.replace("```json", "").replace("```", "").strip()
-            return json.loads(clean_json)
+            # Safety check if candidate exists
+            if 'candidates' in result and result['candidates']:
+                raw = result['candidates'][0]['content']['parts'][0]['text']
+                # Clean up markdown formatting if Gemini adds it
+                clean_json = raw.replace("```json", "").replace("```", "").strip()
+                return json.loads(clean_json)
+        else:
+            print(f"Gemini API Error: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"Gemini Error: {e}")
+        print(f"Gemini Exception: {e}")
     return None
 
 def generate_audio_per_line(line_data, index, kokoro_engine):
+    """Generates audio using Kokoro based on the role."""
     text = line_data["text"]
     role = line_data.get("role", "narrator")
     filename = f"temp_audio_{index}.wav"
     
+    # Voice Selection
     voice_id = "bm_lewis" # Default Narrator (Deep British)
     speed = 0.9
     
     if role == "victim":
-        voice_id = "am_michael" # American Fast
+        voice_id = "am_michael" # American Fast (Panicked)
         speed = 1.2
     elif role == "demon":
         voice_id = "bm_lewis"
-        speed = 0.6 # Extremely Slow & Scary
+        speed = 0.65 # Extremely Slow & Scary
     
+    # Generate Audio
     audio, sample_rate = kokoro_engine.create(text, voice=voice_id, speed=speed, lang="en-gb")
     sf.write(filename, audio, sample_rate)
     return filename
 
-def download_specific_visual(keyword, filename, duration):
+def download_specific_visual(keyword, filename, min_duration):
+    """Downloads a vertical video from Pexels matching the keyword."""
     print(f"🎥 Visual Search: '{keyword}'")
     headers = {"Authorization": PEXELS_KEY}
-    url = f"https://api.pexels.com/videos/search?query={keyword}&per_page=3&orientation=portrait"
+    url = f"https://api.pexels.com/videos/search?query={keyword}&per_page=5&orientation=portrait"
     try:
         r = requests.get(url, headers=headers)
         if r.status_code == 200:
             videos = r.json().get('videos', [])
-            if not videos: return False
+            if not videos: 
+                print("   -> No exact match, trying generic horror...")
+                return download_specific_visual("scary dark abstract", filename, min_duration)
             
-            # Pick the video with best quality/duration match
-            best_video = videos[0] 
-            link = best_video['video_files'][0]['link']
+            # Find the best video (closest duration match, prefer longer than needed)
+            best_video = None
+            for v in videos:
+                if v['duration'] >= min_duration:
+                    best_video = v
+                    break
+            
+            if not best_video: best_video = videos[0] # Fallback to first result
+            
+            # Get the best quality link
+            video_files = best_video['video_files']
+            # Sort by resolution (width * height) descending to get high quality
+            video_files.sort(key=lambda x: x['width'] * x['height'], reverse=True)
+            link = video_files[0]['link']
             
             with open(filename, "wb") as f:
                 f.write(requests.get(link).content)
             return True
-    except: pass
+    except Exception as e:
+        print(f"   -> Pexels Error: {e}")
     return False
 
 def main_pipeline():
-    # anti_ban_sleep() # Uncomment this later if needed
-
     # 1. Determine Content Mode (Story vs Fact)
     mode = get_time_based_mode()
     
     # 2. Generate Script & Metadata
     script_data = generate_script_data(mode)
-    if not script_data: return None, None
+    if not script_data: 
+        print("❌ Failed to generate script.")
+        return None, None
     
     kokoro = setup_kokoro()
     final_clips = []
@@ -177,50 +212,57 @@ def main_pipeline():
     print(f"🎬 Title: {script_data['title']}")
     
     for i, line in enumerate(script_data["lines"]):
-        # Audio
+        # A. Audio Generation
         wav_file = generate_audio_per_line(line, i, kokoro)
-        master_audio(wav_file) # Convert/Process to optimized audio
+        master_audio(wav_file) # Enhance audio
         
         audio_clip = AudioFileClip(wav_file)
-        # Add pause
+        # Add a tiny pause for pacing
         pause = AudioClip(lambda t: 0, duration=0.1)
         audio_clip = concatenate_audioclips([audio_clip, pause])
         
-        # Video
+        # B. Video Generation
         video_file = f"temp_video_{i}.mp4"
+        # Download visual, passing audio duration to find a good match
         if download_specific_visual(line["visual_keyword"], video_file, audio_clip.duration):
             try:
                 clip = VideoFileClip(video_file)
+                
+                # Loop video if it's shorter than audio
                 if clip.duration < audio_clip.duration:
                     clip = clip.loop(duration=audio_clip.duration)
                 else:
                     clip = clip.subclip(0, audio_clip.duration)
                 
-                # Resize/Crop to 9:16
-                clip = clip.resize(height=1920)
-                if clip.w < 1080: clip = clip.resize(width=1080)
+                # Resize/Crop to 9:16 Vertical (1080x1920)
+                # First resize to be at least 1920px tall
+                if clip.h < 1920:
+                     clip = clip.resize(height=1920)
+                
+                # Center Crop
                 clip = clip.crop(x1=clip.w/2 - 540, width=1080, height=1920)
                 
                 clip = clip.set_audio(audio_clip)
                 final_clips.append(clip)
-            except: pass
+            except Exception as e: 
+                print(f"   -> Clip Error: {e}")
 
-    if not final_clips: return None, None
+    if not final_clips: 
+        print("❌ No clips generated.")
+        return None, None
     
-    print("✂️ Rendering...")
+    print("✂️ Rendering Final Video...")
     final_video = concatenate_videoclips(final_clips, method="compose")
     
-    # Background Music (Optional)
-    # You can add the music logic back here if you have mp3s
-    
     output_file = "final_video.mp4"
-    final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24)
+    # Using 'fast' preset for speed, crf 23 for balance
+    final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24, preset="fast", threads=4)
     
     return output_file, script_data
 
 def upload_to_youtube(file_path, metadata):
     if not file_path: return
-    print("🚀 Uploading...")
+    print("🚀 Uploading to YouTube...")
     try:
         creds_dict = json.loads(YOUTUBE_TOKEN_VAL)
         creds = Credentials.from_authorized_user_info(creds_dict)
@@ -231,7 +273,7 @@ def upload_to_youtube(file_path, metadata):
                 "title": metadata['title'], 
                 "description": metadata['description'],
                 "tags": metadata['tags'], 
-                "categoryId": "24" 
+                "categoryId": "24" # Entertainment
             },
             "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
         }
@@ -246,5 +288,9 @@ def upload_to_youtube(file_path, metadata):
         print(f"❌ Upload Failed: {e}")
 
 if __name__ == "__main__":
-    v, m = main_pipeline()
-    if v and m: upload_to_youtube(v, m)
+    # Uncomment anti_ban_sleep() when running in production/scheduled mode
+    # anti_ban_sleep() 
+    
+    video_path, meta = main_pipeline()
+    if video_path and meta: 
+        upload_to_youtube(video_path, meta)
