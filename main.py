@@ -35,7 +35,8 @@ def anti_ban_sleep():
     time.sleep(sleep_seconds)
 
 def get_dynamic_model_url():
-    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    # UPDATED: Using Gemini 2.0 Flash to fix 404 error
+    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
 
 def setup_kokoro():
     """Downloads and initializes the Kokoro TTS model."""
@@ -74,19 +75,19 @@ def get_time_based_mode():
         return "FACT" # Paradox/Science (Evening/Night)
 
 def generate_script_data(mode):
-    """Generates a viral script using Gemini 1.5 Flash with Chaos Seeds."""
+    """Generates a viral script using Gemini 2.0 Flash with Chaos Seeds."""
     print(f"🧠 AI Director Mode: {mode}")
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
     # --- CHAOS SEEDS: Forces unique topics every time ---
     if mode == "STORY":
-        seeds = ["Mirrors", "Abandoned Hospital", "Night Shift", "Forest", "Driving Alone", "Old Doll", "Phone Call", "Basement", "School at Night", "Elevator Game"]
+        seeds = ["Mirrors", "Abandoned Hospital", "Night Shift", "Forest", "Driving Alone", "Old Doll", "Phone Call", "Basement", "School at Night", "Elevator Game", "Sleep Paralysis", "The Backrooms"]
         selected_seed = random.choice(seeds)
         topic_prompt = f"A psychological horror story involving '{selected_seed}'."
         style = "Disturbingly realistic, paranoid, suspenseful."
     else:
-        seeds = ["Time Travel Paradox", "The Ocean Depth", "Simulation Theory", "Human Brain Glitch", "Ancient Egypt Mystery", "Quantum Physics", "Mandela Effect", "Dark Internet Theory"]
+        seeds = ["Time Travel Paradox", "The Ocean Depth", "Simulation Theory", "Human Brain Glitch", "Ancient Egypt Mystery", "Quantum Physics", "Mandela Effect", "Dark Internet Theory", "Space Anomalies"]
         selected_seed = random.choice(seeds)
         topic_prompt = f"A scientific paradox or dark fact about '{selected_seed}'."
         style = "Fast-paced, mind-bending, shocking."
@@ -179,7 +180,7 @@ def download_specific_visual(keyword, filename, min_duration):
                 print("   -> No exact match, trying generic horror...")
                 return download_specific_visual("scary dark abstract", filename, min_duration)
             
-            # --- CHAOS VISUAL: Pick a random video from top 5 to avoid repetition ---
+            # --- CHAOS VISUAL: Pick a random video from top 8 to avoid repetition ---
             # Filter videos that are long enough first
             valid_videos = [v for v in videos if v['duration'] >= min_duration]
             
