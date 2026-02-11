@@ -27,7 +27,15 @@ GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 
+def anti_ban_sleep():
+    """Random sleep to prevent YouTube spam detection."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        sleep_seconds = random.randint(300, 2700)
+        print(f"🕵️ Anti-Ban: Sleeping for {sleep_seconds // 60} minutes...")
+        time.sleep(sleep_seconds)
+
 def get_dynamic_model_url():
+    """Dynamically finds an available Gemini model."""
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
     try:
         response = requests.get(list_url)
@@ -44,6 +52,7 @@ def get_dynamic_model_url():
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
 
 def setup_kokoro():
+    """Initializes Kokoro TTS from stable release links."""
     print("🧠 Initializing Kokoro AI...")
     model_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx"
     voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json"
@@ -58,51 +67,54 @@ def setup_kokoro():
     return Kokoro(model_filename, voices_filename)
 
 def master_audio(file_path):
-    """Studio-grade audio mastering for human-friendly warmth."""
+    """Studio-grade mastering for a warm, human-friendly chest voice."""
     try:
         sound = AudioSegment.from_file(file_path)
-        # Low Pass Filter at 3500Hz removes digital 'hiss' for a chesty human sound
+        # Warmth: Low pass filter at 3500Hz removes robotic high-end hiss
         sound = sound.low_pass_filter(3500) 
         sound = compress_dynamic_range(sound, threshold=-20.0, ratio=4.0)
         sound = normalize(sound)
         sound.export(file_path, format="wav")
     except: pass
 
+def get_time_based_mode():
+    current_hour = datetime.now().hour
+    print(f"🕒 Current UTC Hour: {current_hour}")
+    if 4 <= current_hour < 16:
+        return "STORY"
+    else:
+        return "FACT"
+
 def generate_script_data(mode):
+    """Generates unique, human-centric scripts using layered chaos seeds."""
     print(f"🧠 AI Human Director Mode: {mode}")
     url = get_dynamic_model_url()
     
-    # --- CHAOS ENGINE: 3 Layers of Randomization for Uniqueness ---
+    # Chaos Engine for Uniqueness
     scenarios = ["a discovery", "a warning", "a secret", "a glitch", "a memory"]
-    locations = ["empty playground", "your own bathroom", "late-night subway", "abandoned server room", "foggy highway"]
-    fears = ["eyes where they shouldn't be", "sounds that mimic you", "missing time", "objects moving slightly"]
+    locations = ["empty playground", "your own bathroom", "late-night subway", "abandoned room", "foggy highway"]
+    fears = ["eyes where they shouldn't be", "mimic sounds", "missing time", "shifting objects"]
     
-    perspective = random.choice(scenarios)
-    place = random.choice(locations)
-    trigger = random.choice(fears)
-
-    if mode == "STORY":
-        topic_prompt = f"A story about {perspective} in a {place} involving {trigger}."
-    else:
-        topic_prompt = f"A mind-bending human fact about how our brain perceives {trigger} in a {place}."
+    selected_topic = f"{random.choice(scenarios)} in a {random.choice(locations)} involving {random.choice(fears)}"
 
     prompt_text = f"""
-    You are an award-winning cinematic writer. Write a Short script for: {topic_prompt}
+    Write a cinematic, human-friendly Short script about: {selected_topic}
     
-    ### QUALITY PROTOCOLS:
-    1. **Personal Connection:** Use 'You' or 'I'. Speak as if telling a secret to a friend.
-    2. **Uniqueness:** Avoid cliches like 'scary ghosts'. Focus on psychological 'Uncanny Valley' vibes.
-    3. **Pacing:** One line per sentence. No filler.
+    ### RULES:
+    1. Hook: Start with a personal question or 'You' statement.
+    2. Role: Use 'narrator' for 90% of the script to maintain flow.
+    3. Content: Focus on psychological 'Uncanny Valley' vibes, not monsters.
     
     ### JSON STRUCTURE:
     {{
-        "title": "A GRIPPING HOOK TITLE",
-        "description": "Short and viral.",
-        "tags": ["mystery", "creepy", "shorts"],
+        "title": "SCARY CLICKBAIT TITLE",
+        "description": "Engaging viral description.",
+        "tags": ["creepy", "relatable", "human"],
         "lines": [
-            {{ "role": "narrator", "text": "Line 1 (The Hook)", "visual_keyword": "cinematic moody portrait" }},
-            {{ "role": "narrator", "text": "Line 2 (The Tension)", "visual_keyword": "abstract dark movement" }},
-            {{ "role": "narrator", "text": "Line 3 (The Twist)", "visual_keyword": "eerie close up" }}
+            {{ "role": "narrator", "text": "Hook line here...", "visual_keyword": "cinematic moody lighting" }},
+            {{ "role": "narrator", "text": "Building suspense...", "visual_keyword": "dark uncanny atmosphere" }},
+            {{ "role": "victim", "text": "Impact dialogue line.", "visual_keyword": "shocked reaction" }},
+            {{ "role": "narrator", "text": "Final twist.", "visual_keyword": "black screen fading" }}
         ]
     }}
     """
@@ -113,76 +125,88 @@ def generate_script_data(mode):
         return json.loads(raw.replace("```json", "").replace("```", "").strip())
     except: return None
 
-def main_pipeline():
-    # Detect Time: Morning/Day = STORY, Night = FACT
-    mode = "STORY" if 4 <= datetime.now().hour < 16 else "FACT"
-    script_data = generate_script_data(mode)
-    if not script_data: return
+def generate_audio_per_line(line_data, index, kokoro_engine):
+    text = line_data["text"]
+    role = line_data.get("role", "narrator")
+    filename = f"temp_audio_{index}.wav"
     
-    kokoro = setup_kokoro()
-    final_clips = []
+    voice_id = "bm_lewis"
+    speed = 0.95 if role == "narrator" else 1.1
     
-    for i, line in enumerate(script_data["lines"]):
-        # Voice Logic: British male for authority and warmth
-        audio, sr = kokoro.create(line["text"], voice="bm_lewis", speed=0.95, lang="en-gb")
-        wav_file = f"temp_{i}.wav"
-        sf.write(wav_file, audio, sr)
-        master_audio(wav_file)
-        
-        audio_clip = AudioFileClip(wav_file)
-        # Natural breath pause
-        pause = AudioClip(lambda t: 0, duration=0.2)
-        audio_clip = concatenate_audioclips([audio_clip, pause])
-        
-        video_file = f"vid_{i}.mp4"
-        if download_specific_visual(line["visual_keyword"], video_file, audio_clip.duration):
-            try:
-                clip = VideoFileClip(video_file).subclip(0, audio_clip.duration)
-                # Ensure 9:16 vertical quality
-                clip = clip.resize(height=1920).crop(x1=clip.w/2 - 540, width=1080, height=1920)
-                clip = clip.set_audio(audio_clip).fadein(0.5).fadeout(0.5)
-                final_clips.append(clip)
-            except: pass
-
-    if final_clips:
-        print("✂️ Assembling high-quality master...")
-        final_video = concatenate_videoclips(final_clips, method="compose")
-        final_video.write_videofile("final_video.mp4", codec="libx264", audio_codec="aac", fps=24)
-        upload_to_youtube("final_video.mp4", script_data)
+    audio, sample_rate = kokoro_engine.create(text, voice=voice_id, speed=speed, lang="en-gb")
+    sf.write(filename, audio, sample_rate)
+    return filename
 
 def download_specific_visual(keyword, filename, min_duration):
-    """Picks from top 5 random results to ensure visual variety."""
+    """Picks a random high-quality visual from top 5 search results."""
     headers = {"Authorization": PEXELS_KEY}
     url = f"https://api.pexels.com/videos/search?query={keyword}&per_page=5&orientation=portrait"
     try:
         r = requests.get(url, headers=headers).json()
-        if not r['videos']: return False
-        # Quality fix: random choice from results so different videos appear for same topic
+        if not r.get('videos'): return False
         best_v = random.choice(r['videos'])
         link = best_v['video_files'][0]['link']
         open(filename, "wb").write(requests.get(link).content)
         return True
     except: return False
 
+def main_pipeline():
+    mode = get_time_based_mode()
+    script_data = generate_script_data(mode)
+    if not script_data: return None, None
+    
+    kokoro = setup_kokoro()
+    final_clips = []
+    
+    print(f"🎬 Title: {script_data['title']}")
+    
+    for i, line in enumerate(script_data["lines"]):
+        wav_file = generate_audio_per_line(line, i, kokoro)
+        master_audio(wav_file)
+        
+        audio_clip = AudioFileClip(wav_file)
+        # Natural Breath Pause
+        pause = AudioClip(lambda t: 0, duration=0.2)
+        audio_clip = concatenate_audioclips([audio_clip, pause])
+        
+        video_file = f"temp_video_{i}.mp4"
+        if download_specific_visual(line["visual_keyword"], video_file, audio_clip.duration):
+            try:
+                clip = VideoFileClip(video_file)
+                clip = clip.subclip(0, audio_clip.duration) if clip.duration > audio_clip.duration else clip.loop(duration=audio_clip.duration)
+                
+                # Resize and Smooth Transitions
+                clip = clip.resize(height=1920).crop(x1=clip.w/2 - 540, width=1080, height=1920)
+                clip = clip.set_audio(audio_clip).fadein(0.4).fadeout(0.4)
+                final_clips.append(clip)
+            except: pass
+
+    if not final_clips: return None, None
+    
+    print("✂️ Rendering Cohesive Master...")
+    final_video = concatenate_videoclips(final_clips, method="compose")
+    output_file = "final_video.mp4"
+    final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24, preset="fast")
+    
+    return output_file, script_data
+
 def upload_to_youtube(file_path, metadata):
+    if not file_path: return
+    print("🚀 Uploading...")
     try:
         creds = Credentials.from_authorized_user_info(json.loads(YOUTUBE_TOKEN_VAL))
         youtube = build('youtube', 'v3', credentials=creds)
         youtube.videos().insert(
             part="snippet,status",
             body={ 
-                "snippet": { 
-                    "title": metadata['title'], 
-                    "description": metadata['description'], 
-                    "categoryId": "24",
-                    "tags": metadata.get('tags', [])
-                }, 
-                "status": { "privacyStatus": "public", "selfDeclaredMadeForKids": False } 
+                "snippet": { "title": metadata['title'], "description": metadata['description'], "tags": metadata['tags'], "categoryId": "24" },
+                "status": { "privacyStatus": "public", "selfDeclaredMadeForKids": False }
             },
             media_body=MediaFileUpload(file_path, chunksize=-1, resumable=True)
         ).execute()
-        print("✅ Production Complete: Uploaded.")
-    except Exception as e: print(f"❌ Upload Error: {e}")
+        print("✅ Success!")
+    except Exception as e: print(f"❌ Failed: {e}")
 
 if __name__ == "__main__":
-    main_pipeline()
+    v, m = main_pipeline()
+    if v and m: upload_to_youtube(v, m)
