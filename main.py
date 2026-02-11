@@ -48,13 +48,34 @@ def get_dynamic_model_url():
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
     
 def setup_kokoro():
-    """Downloads and initializes the Kokoro TTS model."""
-    print("🧠 Initializing Kokoro AI...")
-    if not os.path.exists("kokoro-v0_19.onnx"):
-        hf_hub_download(repo_id="hexgrad/Kokoro-82M", filename="kokoro-v0_19.onnx", local_dir=".")
-    if not os.path.exists("voices.json"):
-        hf_hub_download(repo_id="hexgrad/Kokoro-82M", filename="voices.json", local_dir=".")
-    return Kokoro("kokoro-v0_19.onnx", "voices.json")
+    """Downloads and initializes the Kokoro TTS model (v1.0)."""
+    print("🧠 Initializing Kokoro AI (v1.0)...")
+    
+    # URLs for the v1.0 model files
+    model_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+    voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+    
+    model_filename = "kokoro-v1.0.onnx"
+    voices_filename = "voices-v1.0.bin"
+
+    # Download Model if missing
+    if not os.path.exists(model_filename):
+        print(f"   -> Downloading {model_filename}...")
+        response = requests.get(model_url, stream=True)
+        with open(model_filename, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+                
+    # Download Voices if missing
+    if not os.path.exists(voices_filename):
+        print(f"   -> Downloading {voices_filename}...")
+        response = requests.get(voices_url, stream=True)
+        with open(voices_filename, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+    return Kokoro(model_filename, voices_filename)
+
 
 def master_audio(file_path):
     """Post-processing to make audio sound like a studio recording."""
