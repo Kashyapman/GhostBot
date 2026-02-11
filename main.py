@@ -34,10 +34,19 @@ def anti_ban_sleep():
     print(f"🕵️ Anti-Ban: Sleeping for {sleep_seconds // 60} minutes...")
     time.sleep(sleep_seconds)
 
-def get_dynamic_model_url():
-    # UPDATED: Reverting to Gemini 1.5 Flash which has a generous free tier
-    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
 
+def get_dynamic_model_url():
+    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
+    try:
+        response = requests.get(list_url)
+        if response.status_code == 200:
+            data = response.json()
+            for model in data.get('models', []):
+                if "generateContent" in model.get('supportedGenerationMethods', []):
+                    return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
+    except: pass
+    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
+    
 def setup_kokoro():
     """Downloads and initializes the Kokoro TTS model."""
     print("🧠 Initializing Kokoro AI...")
