@@ -6,6 +6,7 @@ requests
 pillow
 numpy
 soundfile
-edge-tts
+kokoro-onnx
+huggingface_hub
 pydub
 scipy
