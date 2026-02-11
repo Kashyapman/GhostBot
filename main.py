@@ -41,10 +41,12 @@ def get_dynamic_model_url():
         response = requests.get(list_url)
         if response.status_code == 200:
             data = response.json()
+            # Try to find Gemini 1.5 Flash first
             for model in data.get('models', []):
                 if "generateContent" in model.get('supportedGenerationMethods', []):
                     if "gemini-1.5-flash" in model['name']:
                         return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
+            # Fallback to any available generating model
             for model in data.get('models', []):
                 if "generateContent" in model.get('supportedGenerationMethods', []):
                     return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
@@ -52,16 +54,18 @@ def get_dynamic_model_url():
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
 
 def setup_kokoro():
-    """Initializes Kokoro TTS from stable release links."""
+    """Initializes Kokoro TTS from stable Hugging Face links (v0.19)."""
     print("🧠 Initializing Kokoro AI...")
-    model_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx"
-    voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json"
+    model_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/kokoro-v0_19.onnx"
+    voices_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/voices.json"
     model_filename = "kokoro-v0_19.onnx"
     voices_filename = "voices.json"
 
     if not os.path.exists(model_filename):
+        print("   -> Downloading Model...")
         r = requests.get(model_url); open(model_filename, "wb").write(r.content)
     if not os.path.exists(voices_filename):
+        print("   -> Downloading Voices...")
         r = requests.get(voices_url); open(voices_filename, "wb").write(r.content)
 
     return Kokoro(model_filename, voices_filename)
@@ -90,7 +94,7 @@ def generate_script_data(mode):
     print(f"🧠 AI Human Director Mode: {mode}")
     url = get_dynamic_model_url()
     
-    # Chaos Engine for Uniqueness
+    # --- CHAOS ENGINE ---
     scenarios = ["a discovery", "a warning", "a secret", "a glitch", "a memory"]
     locations = ["empty playground", "your own bathroom", "late-night subway", "abandoned room", "foggy highway"]
     fears = ["eyes where they shouldn't be", "mimic sounds", "missing time", "shifting objects"]
@@ -112,7 +116,7 @@ def generate_script_data(mode):
         "tags": ["creepy", "relatable", "human"],
         "lines": [
             {{ "role": "narrator", "text": "Hook line here...", "visual_keyword": "cinematic moody lighting" }},
-            {{ "role": "narrator", "text": "Building suspense...", "visual_keyword": "dark uncanny atmosphere" }},
+            {{ "role": "narrator", "text": "Building suspense...", "visual_keyword": "uncanny dark atmosphere" }},
             {{ "role": "victim", "text": "Impact dialogue line.", "visual_keyword": "shocked reaction" }},
             {{ "role": "narrator", "text": "Final twist.", "visual_keyword": "black screen fading" }}
         ]
@@ -139,21 +143,37 @@ def generate_audio_per_line(line_data, index, kokoro_engine):
 
 def download_specific_visual(keyword, filename, min_duration):
     """Picks a random high-quality visual from top 5 search results."""
+    print(f"🎥 Visual Search: '{keyword}'")
     headers = {"Authorization": PEXELS_KEY}
     url = f"https://api.pexels.com/videos/search?query={keyword}&per_page=5&orientation=portrait"
     try:
         r = requests.get(url, headers=headers).json()
-        if not r.get('videos'): return False
+        if not r.get('videos'): 
+             # Fallback if no specific video found
+             return download_specific_visual("dark abstract horror", filename, min_duration)
+        
+        # Randomly pick from top 5 to ensure variety
         best_v = random.choice(r['videos'])
         link = best_v['video_files'][0]['link']
-        open(filename, "wb").write(requests.get(link).content)
+        
+        # Sort files by quality to ensure we get a good one (highest resolution first)
+        video_files = best_v['video_files']
+        video_files.sort(key=lambda x: x['width'] * x['height'], reverse=True)
+        link = video_files[0]['link']
+
+        with open(filename, "wb") as f:
+            f.write(requests.get(link).content)
         return True
-    except: return False
+    except Exception as e: 
+        print(f"   -> Visual Download Error: {e}")
+        return False
 
 def main_pipeline():
     mode = get_time_based_mode()
     script_data = generate_script_data(mode)
-    if not script_data: return None, None
+    if not script_data: 
+        print("❌ Script generation failed.")
+        return None, None
     
     kokoro = setup_kokoro()
     final_clips = []
@@ -165,7 +185,7 @@ def main_pipeline():
         master_audio(wav_file)
         
         audio_clip = AudioFileClip(wav_file)
-        # Natural Breath Pause
+        # Natural Breath Pause (0.2s)
         pause = AudioClip(lambda t: 0, duration=0.2)
         audio_clip = concatenate_audioclips([audio_clip, pause])
         
@@ -173,15 +193,31 @@ def main_pipeline():
         if download_specific_visual(line["visual_keyword"], video_file, audio_clip.duration):
             try:
                 clip = VideoFileClip(video_file)
-                clip = clip.subclip(0, audio_clip.duration) if clip.duration > audio_clip.duration else clip.loop(duration=audio_clip.duration)
                 
-                # Resize and Smooth Transitions
-                clip = clip.resize(height=1920).crop(x1=clip.w/2 - 540, width=1080, height=1920)
+                # --- BLACK SCREEN FIX: LOOPING LOGIC ---
+                if clip.duration < audio_clip.duration:
+                    # Calculate how many loops needed to cover audio
+                    n_loops = int(np.ceil(audio_clip.duration / clip.duration)) + 1
+                    clip = clip.loop(n_loops)
+                
+                # Trim to exact audio length
+                clip = clip.subclip(0, audio_clip.duration)
+                
+                # Resize and Crop to Vertical 9:16
+                clip = clip.resize(height=1920)
+                if clip.w < 1080:
+                    clip = clip.resize(width=1080)
+                clip = clip.crop(x1=clip.w/2 - 540, width=1080, height=1920)
+                
+                # Apply Audio and Smooth Transitions
                 clip = clip.set_audio(audio_clip).fadein(0.4).fadeout(0.4)
                 final_clips.append(clip)
-            except: pass
+            except Exception as e:
+                print(f"   -> Clip Processing Error: {e}")
 
-    if not final_clips: return None, None
+    if not final_clips: 
+        print("❌ No valid clips produced.")
+        return None, None
     
     print("✂️ Rendering Cohesive Master...")
     final_video = concatenate_videoclips(final_clips, method="compose")
@@ -192,7 +228,7 @@ def main_pipeline():
 
 def upload_to_youtube(file_path, metadata):
     if not file_path: return
-    print("🚀 Uploading...")
+    print("🚀 Uploading to YouTube...")
     try:
         creds = Credentials.from_authorized_user_info(json.loads(YOUTUBE_TOKEN_VAL))
         youtube = build('youtube', 'v3', credentials=creds)
@@ -205,8 +241,9 @@ def upload_to_youtube(file_path, metadata):
             media_body=MediaFileUpload(file_path, chunksize=-1, resumable=True)
         ).execute()
         print("✅ Success!")
-    except Exception as e: print(f"❌ Failed: {e}")
+    except Exception as e: print(f"❌ Upload Failed: {e}")
 
 if __name__ == "__main__":
+    # anti_ban_sleep() # Uncomment for random delays
     v, m = main_pipeline()
     if v and m: upload_to_youtube(v, m)
