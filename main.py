@@ -59,15 +59,15 @@ def get_dynamic_model_url():
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
     
 def setup_kokoro():
-    """Downloads and initializes the Kokoro TTS model (v1.0)."""
-    print("🧠 Initializing Kokoro AI (v1.0)...")
+    """Downloads and initializes the Kokoro TTS model using standard HF paths."""
+    print("🧠 Initializing Kokoro AI...")
     
-    # URLs for the v1.0 model files
-    model_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
-    voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+    # UPDATED: Using the standard filenames which work with the library's JSON expectation
+    model_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/kokoro.onnx"
+    voices_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/voices.json"
     
-    model_filename = "kokoro-v1.0.onnx"
-    voices_filename = "voices-v1.0.bin"
+    model_filename = "kokoro.onnx"
+    voices_filename = "voices.json"
 
     # Download Model if missing
     if not os.path.exists(model_filename):
