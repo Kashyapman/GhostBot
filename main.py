@@ -59,12 +59,12 @@ def get_dynamic_model_url():
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
     
 def setup_kokoro():
-    """Downloads and initializes the Kokoro TTS model using stable Hugging Face links."""
+    """Downloads and initializes the Kokoro TTS model using stable v0.19 files."""
     print("🧠 Initializing Kokoro AI...")
     
-    # URLs for the standard model and voices file
-    # We use v0_19 because it pairs with the standard voices.json structure
+    # URL 1: The ONNX Model (v0.19 - Compatible with standard library)
     model_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/kokoro-v0_19.onnx"
+    # URL 2: The Voices JSON (Required for v0.19 compatibility)
     voices_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/voices.json"
     
     model_filename = "kokoro-v0_19.onnx"
