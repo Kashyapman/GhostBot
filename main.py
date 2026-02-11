@@ -59,12 +59,13 @@ def get_dynamic_model_url():
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
     
 def setup_kokoro():
-    """Downloads and initializes the Kokoro TTS model using standard HF paths."""
+    """Downloads and initializes the Kokoro TTS model using stable GitHub release links."""
     print("🧠 Initializing Kokoro AI...")
     
-    # UPDATED: Using the standard filenames which work with the library's JSON expectation
-    model_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/kokoro.onnx"
-    voices_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/voices.json"
+    # UPDATED: Using official GitHub Release links for the Kokoro-ONNX library
+    # These files (onnx + json) are strictly compatible with the pip library you have installed.
+    model_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro.onnx"
+    voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json"
     
     model_filename = "kokoro.onnx"
     voices_filename = "voices.json"
