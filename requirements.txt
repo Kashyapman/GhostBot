@@ -7,4 +7,5 @@ pillow
 numpy
 soundfile
 edge-tts
-decorator<5,>=4.0.2
+pydub
+scipy
