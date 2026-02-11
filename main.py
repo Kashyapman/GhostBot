@@ -34,17 +34,28 @@ def anti_ban_sleep():
     print(f"🕵️ Anti-Ban: Sleeping for {sleep_seconds // 60} minutes...")
     time.sleep(sleep_seconds)
 
-
 def get_dynamic_model_url():
+    """Dynamically finds an available Gemini model supporting generateContent."""
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
     try:
         response = requests.get(list_url)
         if response.status_code == 200:
             data = response.json()
+            # Prefer newer models if available
+            for model in data.get('models', []):
+                if "generateContent" in model.get('supportedGenerationMethods', []):
+                    # Prefer 1.5 Flash or Pro if available as they are stable
+                    if "gemini-1.5-flash" in model['name']:
+                        return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
+            
+            # If no specific preference found, take the first valid one
             for model in data.get('models', []):
                 if "generateContent" in model.get('supportedGenerationMethods', []):
                     return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
-    except: pass
+    except Exception as e:
+        print(f"⚠️ Failed to list models: {e}")
+    
+    # Fallback default
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
     
 def setup_kokoro():
@@ -61,21 +72,30 @@ def setup_kokoro():
     # Download Model if missing
     if not os.path.exists(model_filename):
         print(f"   -> Downloading {model_filename}...")
-        response = requests.get(model_url, stream=True)
-        with open(model_filename, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+        try:
+            response = requests.get(model_url, stream=True)
+            response.raise_for_status()
+            with open(model_filename, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        except Exception as e:
+            print(f"❌ Failed to download model: {e}")
+            return None
                 
     # Download Voices if missing
     if not os.path.exists(voices_filename):
         print(f"   -> Downloading {voices_filename}...")
-        response = requests.get(voices_url, stream=True)
-        with open(voices_filename, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+        try:
+            response = requests.get(voices_url, stream=True)
+            response.raise_for_status()
+            with open(voices_filename, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        except Exception as e:
+            print(f"❌ Failed to download voices: {e}")
+            return None
 
     return Kokoro(model_filename, voices_filename)
-
 
 def master_audio(file_path):
     """Post-processing to make audio sound like a studio recording."""
@@ -105,9 +125,10 @@ def get_time_based_mode():
         return "FACT" # Paradox/Science (Evening/Night)
 
 def generate_script_data(mode):
-    """Generates a viral script using Gemini 2.0 Flash with Chaos Seeds."""
+    """Generates a viral script using Gemini with Chaos Seeds."""
     print(f"🧠 AI Director Mode: {mode}")
     url = get_dynamic_model_url()
+    print(f"🔗 Using Model URL: {url.split('?')[0]}") # Log which model is being used
     headers = {'Content-Type': 'application/json'}
     
     # --- CHAOS SEEDS: Forces unique topics every time ---
@@ -245,6 +266,10 @@ def main_pipeline():
         return None, None
     
     kokoro = setup_kokoro()
+    if not kokoro:
+        print("❌ Failed to initialize Kokoro.")
+        return None, None
+
     final_clips = []
     
     print(f"🎬 Title: {script_data['title']}")
