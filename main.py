@@ -35,8 +35,8 @@ def anti_ban_sleep():
     time.sleep(sleep_seconds)
 
 def get_dynamic_model_url():
-    # UPDATED: Using Gemini 2.0 Flash to fix 404 error
-    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    # UPDATED: Reverting to Gemini 1.5 Flash which has a generous free tier
+    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
 
 def setup_kokoro():
     """Downloads and initializes the Kokoro TTS model."""
