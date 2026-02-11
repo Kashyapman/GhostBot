@@ -74,16 +74,21 @@ def get_time_based_mode():
         return "FACT" # Paradox/Science (Evening/Night)
 
 def generate_script_data(mode):
-    """Generates a viral script using Gemini 1.5 Flash."""
+    """Generates a viral script using Gemini 1.5 Flash with Chaos Seeds."""
     print(f"🧠 AI Director Mode: {mode}")
     url = get_dynamic_model_url()
     headers = {'Content-Type': 'application/json'}
     
+    # --- CHAOS SEEDS: Forces unique topics every time ---
     if mode == "STORY":
-        topic_prompt = "A psychological horror story or 'glitch in the matrix' encounter."
+        seeds = ["Mirrors", "Abandoned Hospital", "Night Shift", "Forest", "Driving Alone", "Old Doll", "Phone Call", "Basement", "School at Night", "Elevator Game"]
+        selected_seed = random.choice(seeds)
+        topic_prompt = f"A psychological horror story involving '{selected_seed}'."
         style = "Disturbingly realistic, paranoid, suspenseful."
     else:
-        topic_prompt = "A scientific paradox or dark history fact that sounds fake but is true."
+        seeds = ["Time Travel Paradox", "The Ocean Depth", "Simulation Theory", "Human Brain Glitch", "Ancient Egypt Mystery", "Quantum Physics", "Mandela Effect", "Dark Internet Theory"]
+        selected_seed = random.choice(seeds)
+        topic_prompt = f"A scientific paradox or dark fact about '{selected_seed}'."
         style = "Fast-paced, mind-bending, shocking."
 
     prompt_text = f"""
@@ -165,7 +170,7 @@ def download_specific_visual(keyword, filename, min_duration):
     """Downloads a vertical video from Pexels matching the keyword."""
     print(f"🎥 Visual Search: '{keyword}'")
     headers = {"Authorization": PEXELS_KEY}
-    url = f"https://api.pexels.com/videos/search?query={keyword}&per_page=5&orientation=portrait"
+    url = f"https://api.pexels.com/videos/search?query={keyword}&per_page=8&orientation=portrait"
     try:
         r = requests.get(url, headers=headers)
         if r.status_code == 200:
@@ -174,14 +179,16 @@ def download_specific_visual(keyword, filename, min_duration):
                 print("   -> No exact match, trying generic horror...")
                 return download_specific_visual("scary dark abstract", filename, min_duration)
             
-            # Find the best video (closest duration match, prefer longer than needed)
-            best_video = None
-            for v in videos:
-                if v['duration'] >= min_duration:
-                    best_video = v
-                    break
+            # --- CHAOS VISUAL: Pick a random video from top 5 to avoid repetition ---
+            # Filter videos that are long enough first
+            valid_videos = [v for v in videos if v['duration'] >= min_duration]
             
-            if not best_video: best_video = videos[0] # Fallback to first result
+            if valid_videos:
+                # Pick random from valid ones
+                best_video = random.choice(valid_videos)
+            else:
+                # Fallback: Pick random from any (we loop it later)
+                best_video = random.choice(videos)
             
             # Get the best quality link
             video_files = best_video['video_files']
