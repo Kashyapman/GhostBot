@@ -19,7 +19,6 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from kokoro_onnx import Kokoro
-from huggingface_hub import hf_hub_download
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range, normalize
 
@@ -30,9 +29,11 @@ YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 
 def anti_ban_sleep():
     """Random sleep to prevent YouTube spam detection."""
-    sleep_seconds = random.randint(300, 2700) # 5 to 45 minutes
-    print(f"🕵️ Anti-Ban: Sleeping for {sleep_seconds // 60} minutes...")
-    time.sleep(sleep_seconds)
+    # Only run this if not testing manually
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        sleep_seconds = random.randint(300, 2700) # 5 to 45 minutes
+        print(f"🕵️ Anti-Ban: Sleeping for {sleep_seconds // 60} minutes...")
+        time.sleep(sleep_seconds)
 
 def get_dynamic_model_url():
     """Dynamically finds an available Gemini model supporting generateContent."""
@@ -44,7 +45,6 @@ def get_dynamic_model_url():
             # Prefer newer models if available
             for model in data.get('models', []):
                 if "generateContent" in model.get('supportedGenerationMethods', []):
-                    # Prefer 1.5 Flash or Pro if available as they are stable
                     if "gemini-1.5-flash" in model['name']:
                         return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
             
@@ -57,41 +57,43 @@ def get_dynamic_model_url():
     
     # Fallback default
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
-    
+
 def setup_kokoro():
-    """Downloads and initializes the Kokoro TTS model using stable v0.19 files."""
+    """Downloads and initializes the Kokoro TTS model using STABLE GitHub Release links."""
     print("🧠 Initializing Kokoro AI...")
     
-    # URL 1: The ONNX Model (v0.19 - Compatible with standard library)
-    model_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/kokoro-v0_19.onnx"
-    # URL 2: The Voices JSON (Required for v0.19 compatibility)
-    voices_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/voices.json"
+    # --- FIXED URLs (From the official kokoro-onnx library release assets) ---
+    # These links are stable and won't 404 like the Hugging Face main branch
+    model_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx"
+    voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json"
     
     model_filename = "kokoro-v0_19.onnx"
     voices_filename = "voices.json"
 
     # Download Model if missing
     if not os.path.exists(model_filename):
-        print(f"   -> Downloading {model_filename}...")
+        print(f"   -> Downloading {model_filename} from Stable Source...")
         try:
             response = requests.get(model_url, stream=True)
             response.raise_for_status()
             with open(model_filename, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
+            print("   ✅ Model Downloaded.")
         except Exception as e:
             print(f"❌ Failed to download model: {e}")
             return None
                 
     # Download Voices if missing
     if not os.path.exists(voices_filename):
-        print(f"   -> Downloading {voices_filename}...")
+        print(f"   -> Downloading {voices_filename} from Stable Source...")
         try:
             response = requests.get(voices_url, stream=True)
             response.raise_for_status()
             with open(voices_filename, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
+            print("   ✅ Voices Downloaded.")
         except Exception as e:
             print(f"❌ Failed to download voices: {e}")
             return None
@@ -129,17 +131,17 @@ def generate_script_data(mode):
     """Generates a viral script using Gemini with Chaos Seeds."""
     print(f"🧠 AI Director Mode: {mode}")
     url = get_dynamic_model_url()
-    print(f"🔗 Using Model URL: {url.split('?')[0]}") # Log which model is being used
+    # print(f"🔗 Using Model URL: {url.split('?')[0]}") 
     headers = {'Content-Type': 'application/json'}
     
     # --- CHAOS SEEDS: Forces unique topics every time ---
     if mode == "STORY":
-        seeds = ["Mirrors", "Abandoned Hospital", "Night Shift", "Forest", "Driving Alone", "Old Doll", "Phone Call", "Basement", "School at Night", "Elevator Game", "Sleep Paralysis", "The Backrooms"]
+        seeds = ["Mirrors", "Abandoned Hospital", "Night Shift", "Forest", "Driving Alone", "Old Doll", "Phone Call", "Basement", "School at Night", "Elevator Game", "Sleep Paralysis", "The Backrooms", "Doppelganger", "Ouija Board"]
         selected_seed = random.choice(seeds)
         topic_prompt = f"A psychological horror story involving '{selected_seed}'."
         style = "Disturbingly realistic, paranoid, suspenseful."
     else:
-        seeds = ["Time Travel Paradox", "The Ocean Depth", "Simulation Theory", "Human Brain Glitch", "Ancient Egypt Mystery", "Quantum Physics", "Mandela Effect", "Dark Internet Theory", "Space Anomalies"]
+        seeds = ["Time Travel Paradox", "The Ocean Depth", "Simulation Theory", "Human Brain Glitch", "Ancient Egypt Mystery", "Quantum Physics", "Mandela Effect", "Dark Internet Theory", "Space Anomalies", "Dead Internet Theory", "Roko's Basilisk"]
         selected_seed = random.choice(seeds)
         topic_prompt = f"A scientific paradox or dark fact about '{selected_seed}'."
         style = "Fast-paced, mind-bending, shocking."
@@ -185,10 +187,8 @@ def generate_script_data(mode):
         response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
             result = response.json()
-            # Safety check if candidate exists
             if 'candidates' in result and result['candidates']:
                 raw = result['candidates'][0]['content']['parts'][0]['text']
-                # Clean up markdown formatting if Gemini adds it
                 clean_json = raw.replace("```json", "").replace("```", "").strip()
                 return json.loads(clean_json)
         else:
@@ -232,20 +232,16 @@ def download_specific_visual(keyword, filename, min_duration):
                 print("   -> No exact match, trying generic horror...")
                 return download_specific_visual("scary dark abstract", filename, min_duration)
             
-            # --- CHAOS VISUAL: Pick a random video from top 8 to avoid repetition ---
             # Filter videos that are long enough first
             valid_videos = [v for v in videos if v['duration'] >= min_duration]
             
             if valid_videos:
-                # Pick random from valid ones
                 best_video = random.choice(valid_videos)
             else:
-                # Fallback: Pick random from any (we loop it later)
                 best_video = random.choice(videos)
             
             # Get the best quality link
             video_files = best_video['video_files']
-            # Sort by resolution (width * height) descending to get high quality
             video_files.sort(key=lambda x: x['width'] * x['height'], reverse=True)
             link = video_files[0]['link']
             
@@ -299,7 +295,6 @@ def main_pipeline():
                     clip = clip.subclip(0, audio_clip.duration)
                 
                 # Resize/Crop to 9:16 Vertical (1080x1920)
-                # First resize to be at least 1920px tall
                 if clip.h < 1920:
                      clip = clip.resize(height=1920)
                 
@@ -352,8 +347,7 @@ def upload_to_youtube(file_path, metadata):
         print(f"❌ Upload Failed: {e}")
 
 if __name__ == "__main__":
-    # Uncomment anti_ban_sleep() when running in production/scheduled mode
-    # anti_ban_sleep() 
+    # anti_ban_sleep() # Uncomment this if you want random delays
     
     video_path, meta = main_pipeline()
     if video_path and meta: 
