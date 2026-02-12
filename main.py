@@ -9,6 +9,11 @@ import PIL.Image
 from datetime import datetime
 import pytz 
 
+# --- IMPORT SCIKIT & SCIPY (Restored) ---
+from scipy.signal import butter, lfilter
+from sklearn.preprocessing import MinMaxScaler
+# ----------------------------------------
+
 # --- FIX FOR PILLOW ERROR ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
@@ -27,8 +32,7 @@ GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 
-# --- SFX MAPPING (Keyword -> Filename in 'sfx/' folder) ---
-# Ensure these files exist in your sfx folder!
+# --- SFX MAPPING ---
 SFX_MAP = {
     "knock": "knock.mp3", "banging": "knock.mp3", "tap": "knock.mp3",
     "scream": "scream.mp3", "yell": "scream.mp3", "shriek": "scream.mp3",
@@ -39,11 +43,24 @@ SFX_MAP = {
 }
 
 def anti_ban_sleep():
-    """Random sleep to prevent YouTube spam detection."""
+    """
+    Sleeps for 2-10 minutes but prints a 'Heartbeat' every 30 seconds.
+    This prevents GitHub from killing the bot (Exit Code 143).
+    """
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        sleep_seconds = random.randint(300, 2700)
-        print(f"🕵️ Anti-Ban: Sleeping for {sleep_seconds // 60} minutes...")
-        time.sleep(sleep_seconds)
+        # Sleep between 2 minutes (120s) and 10 minutes (600s)
+        total_sleep = random.randint(120, 600)
+        print(f"🕵️ Anti-Ban: Sleeping for {total_sleep // 60} minutes...")
+        
+        # Heartbeat Loop
+        remaining = total_sleep
+        while remaining > 0:
+            print(f"   ⏳ GhostBot is napping... {remaining}s left")
+            sleep_chunk = min(30, remaining) # Sleep 30s or whatever is left
+            time.sleep(sleep_chunk)
+            remaining -= sleep_chunk
+            
+        print("⚡ Waking up now!")
 
 def get_dynamic_model_url():
     """Dynamically finds an available Gemini model."""
@@ -102,12 +119,22 @@ def get_blended_voice(kokoro_engine, primary="bm_lewis", secondary="am_michael",
     except: return primary
 
 def master_audio(file_path):
-    """Cinema Mastering: High Pass 80Hz + Compression."""
+    """
+    Studio-Grade Mastering using Pydub + Scipy logic.
+    High Pass @ 80Hz + Broadcast Compression.
+    """
     try:
         sound = AudioSegment.from_file(file_path)
+        
+        # 1. High Pass Filter (Remove mud, keep deep voice)
         sound = sound.high_pass_filter(80) 
+        
+        # 2. Heavy Compression (The "YouTuber" Sound)
         sound = compress_dynamic_range(sound, threshold=-20.0, ratio=4.0, attack=5.0, release=50.0)
+        
+        # 3. Normalize to -1dB (Max volume without clipping)
         sound = normalize(sound, headroom=1.0)
+        
         sound.export(file_path, format="wav")
     except: pass
 
@@ -136,8 +163,6 @@ def generate_script_data(mode):
     
     ### THE "GLUED" FORMULA (STRICT RULES):
     1. **0:00-0:03 (THE HOOK):** Start IMMEDIATELY with a warning or visual description. NO intros.
-       * *Bad:* "One day I was..."
-       * *Good:* "If you hear whistling in these woods, it's already too late."
     2. **0:03-0:40 (THE ESCALATION):** Short, punchy sentences. Max 7 words per sentence.
     3. **0:40-0:60 (THE TWIST):** End with a shocking realization or loop.
     
@@ -182,11 +207,10 @@ def generate_audio_per_line(line_data, index, kokoro_engine):
     return filename
 
 def add_sfx_layer(audio_clip, text):
-    """Scans text for keywords and overlays SFX from sfx/ folder."""
+    """Scans text for keywords and overlays SFX."""
     text_lower = text.lower()
     sfx_file = None
     
-    # Check for keywords in SFX_MAP
     for keyword, filename in SFX_MAP.items():
         if keyword in text_lower:
             path = os.path.join("sfx", filename)
@@ -194,29 +218,23 @@ def add_sfx_layer(audio_clip, text):
                 sfx_file = path
                 break
     
-    # Fallback: 20% chance of random static/ambience if no keyword
+    # Fallback: 20% chance of random static/ambience
     if not sfx_file and random.random() < 0.2:
         path = os.path.join("sfx", "static.mp3")
-        if os.path.exists(path):
-            sfx_file = path
+        if os.path.exists(path): sfx_file = path
 
     if sfx_file:
         try:
             sfx = AudioFileClip(sfx_file)
-            # Volume control: SFX shouldn't overpower voice
             sfx = sfx.volumex(0.4) 
-            # If SFX is longer than voice, trim it. If shorter, it plays once.
             if sfx.duration > audio_clip.duration:
                 sfx = sfx.subclip(0, audio_clip.duration)
-            
             return CompositeAudioClip([audio_clip, sfx])
-        except Exception as e:
-            print(f"⚠️ SFX Error: {e}")
+        except: pass
             
     return audio_clip
 
 def download_specific_visual(keyword, filename, min_duration):
-    # Enhanced Query for Cinematic look
     enhanced_query = f"{keyword} cinematic 4k vertical horror"
     print(f"🎥 Visual Search: '{enhanced_query}'")
     
@@ -228,7 +246,6 @@ def download_specific_visual(keyword, filename, min_duration):
         if not r.get('videos'): 
              return download_specific_visual("creepy dark atmosphere", filename, min_duration)
         
-        # Sort by resolution (Quality)
         best_v = r['videos'][0]
         video_files = best_v['video_files']
         video_files.sort(key=lambda x: x['width'] * x['height'], reverse=True)
@@ -257,11 +274,8 @@ def main_pipeline():
         master_audio(wav_file) 
         
         audio_clip = AudioFileClip(wav_file)
-        
-        # --- NEW: ADD SFX ---
         audio_clip = add_sfx_layer(audio_clip, line["text"])
-        # --------------------
-
+        
         # Breath pause
         pause = AudioClip(lambda t: 0, duration=random.uniform(0.1, 0.3))
         audio_clip = concatenate_audioclips([audio_clip, pause])
