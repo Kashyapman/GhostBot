@@ -29,6 +29,7 @@ YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 
 def anti_ban_sleep():
     """Random sleep to prevent YouTube spam detection."""
+    # Only sleep if running on GitHub Actions (Production)
     if os.environ.get("GITHUB_ACTIONS") == "true":
         sleep_seconds = random.randint(300, 2700)
         print(f"🕵️ Anti-Ban: Sleeping for {sleep_seconds // 60} minutes...")
@@ -46,7 +47,7 @@ def get_dynamic_model_url():
                 if "generateContent" in model.get('supportedGenerationMethods', []):
                     if "gemini-1.5-flash" in model['name']:
                         return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
-            # Fallback to any available generating model
+            # Fallback
             for model in data.get('models', []):
                 if "generateContent" in model.get('supportedGenerationMethods', []):
                     return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
@@ -54,27 +55,56 @@ def get_dynamic_model_url():
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
 
 def setup_kokoro():
-    """Initializes Kokoro TTS from stable Hugging Face links (v0.19)."""
+    """Initializes Kokoro TTS with SELF-HEALING download logic."""
     print("🧠 Initializing Kokoro AI...")
-    model_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/kokoro-v0_19.onnx"
-    voices_url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/voices.json"
+    
+    # STABLE LINKS (GitHub Releases instead of Hugging Face)
+    model_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx"
+    voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json"
+    
     model_filename = "kokoro-v0_19.onnx"
     voices_filename = "voices.json"
 
+    # 1. SELF-HEALING: Delete corrupt files if they exist but are wrong
+    if os.path.exists(model_filename):
+        size_mb = os.path.getsize(model_filename) / (1024 * 1024)
+        if size_mb < 50: # The real model is ~80MB. If <50MB, it's a 404 error page.
+            print(f"⚠️ Detected corrupt model file ({size_mb:.2f} MB). Deleting...")
+            os.remove(model_filename)
+
+    # 2. DOWNLOAD (Streamed)
     if not os.path.exists(model_filename):
-        print("   -> Downloading Model...")
-        r = requests.get(model_url); open(model_filename, "wb").write(r.content)
+        print(f"   -> Downloading Model from Stable Source...")
+        try:
+            r = requests.get(model_url, stream=True)
+            r.raise_for_status() # Check for 404 errors
+            with open(model_filename, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print("   ✅ Model Downloaded.")
+        except Exception as e:
+            print(f"❌ Failed to download model: {e}")
+            return None
+
     if not os.path.exists(voices_filename):
-        print("   -> Downloading Voices...")
-        r = requests.get(voices_url); open(voices_filename, "wb").write(r.content)
+        print(f"   -> Downloading Voices...")
+        try:
+            r = requests.get(voices_url, stream=True)
+            r.raise_for_status()
+            with open(voices_filename, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print("   ✅ Voices Downloaded.")
+        except Exception as e:
+            print(f"❌ Failed to download voices: {e}")
+            return None
 
     return Kokoro(model_filename, voices_filename)
 
 def master_audio(file_path):
-    """Studio-grade mastering for a warm, human-friendly chest voice."""
+    """Studio-grade mastering."""
     try:
         sound = AudioSegment.from_file(file_path)
-        # Warmth: Low pass filter at 3500Hz removes robotic high-end hiss
         sound = sound.low_pass_filter(3500) 
         sound = compress_dynamic_range(sound, threshold=-20.0, ratio=4.0)
         sound = normalize(sound)
@@ -90,24 +120,28 @@ def get_time_based_mode():
         return "FACT"
 
 def generate_script_data(mode):
-    """Generates unique, human-centric scripts using layered chaos seeds."""
     print(f"🧠 AI Human Director Mode: {mode}")
     url = get_dynamic_model_url()
     
     # --- CHAOS ENGINE ---
-    scenarios = ["a discovery", "a warning", "a secret", "a glitch", "a memory"]
-    locations = ["empty playground", "your own bathroom", "late-night subway", "abandoned room", "foggy highway"]
-    fears = ["eyes where they shouldn't be", "mimic sounds", "missing time", "shifting objects"]
+    scenarios = ["a discovery", "a warning", "a secret", "a glitch", "a memory", "a signal"]
+    locations = ["empty playground", "your own bathroom", "late-night subway", "abandoned room", "foggy highway", "dark hallway"]
+    fears = ["eyes where they shouldn't be", "mimic sounds", "missing time", "shifting objects", "a voice that knows your name"]
     
-    selected_topic = f"{random.choice(scenarios)} in a {random.choice(locations)} involving {random.choice(fears)}"
+    if mode == "STORY":
+        topic = f"{random.choice(scenarios)} in a {random.choice(locations)} involving {random.choice(fears)}"
+        prompt_prefix = "Write a cinematic, psychological horror Short script"
+    else:
+        topic = f"A mind-blowing paradox about {random.choice(['Time', 'Space', 'Consciousness', 'The Internet'])}"
+        prompt_prefix = "Write a viral, educational fact script"
 
     prompt_text = f"""
-    Write a cinematic, human-friendly Short script about: {selected_topic}
+    {prompt_prefix} about: {topic}
     
     ### RULES:
     1. Hook: Start with a personal question or 'You' statement.
-    2. Role: Use 'narrator' for 90% of the script to maintain flow.
-    3. Content: Focus on psychological 'Uncanny Valley' vibes, not monsters.
+    2. Role: Use 'narrator' for 90% of the script.
+    3. Content: Focus on psychological 'Uncanny Valley' vibes.
     
     ### JSON STRUCTURE:
     {{
@@ -125,6 +159,7 @@ def generate_script_data(mode):
     
     try:
         r = requests.post(url, json={ "contents": [{ "parts": [{"text": prompt_text}] }] })
+        if r.status_code != 200: return None
         raw = r.json()['candidates'][0]['content']['parts'][0]['text']
         return json.loads(raw.replace("```json", "").replace("```", "").strip())
     except: return None
@@ -149,14 +184,10 @@ def download_specific_visual(keyword, filename, min_duration):
     try:
         r = requests.get(url, headers=headers).json()
         if not r.get('videos'): 
-             # Fallback if no specific video found
              return download_specific_visual("dark abstract horror", filename, min_duration)
         
-        # Randomly pick from top 5 to ensure variety
         best_v = random.choice(r['videos'])
-        link = best_v['video_files'][0]['link']
         
-        # Sort files by quality to ensure we get a good one (highest resolution first)
         video_files = best_v['video_files']
         video_files.sort(key=lambda x: x['width'] * x['height'], reverse=True)
         link = video_files[0]['link']
@@ -169,6 +200,9 @@ def download_specific_visual(keyword, filename, min_duration):
         return False
 
 def main_pipeline():
+    # Uncomment next line for production
+    anti_ban_sleep()
+    
     mode = get_time_based_mode()
     script_data = generate_script_data(mode)
     if not script_data: 
@@ -176,8 +210,11 @@ def main_pipeline():
         return None, None
     
     kokoro = setup_kokoro()
+    if not kokoro:
+        print("❌ Kokoro Setup Failed.")
+        return None, None
+
     final_clips = []
-    
     print(f"🎬 Title: {script_data['title']}")
     
     for i, line in enumerate(script_data["lines"]):
@@ -185,7 +222,6 @@ def main_pipeline():
         master_audio(wav_file)
         
         audio_clip = AudioFileClip(wav_file)
-        # Natural Breath Pause (0.2s)
         pause = AudioClip(lambda t: 0, duration=0.2)
         audio_clip = concatenate_audioclips([audio_clip, pause])
         
@@ -193,23 +229,17 @@ def main_pipeline():
         if download_specific_visual(line["visual_keyword"], video_file, audio_clip.duration):
             try:
                 clip = VideoFileClip(video_file)
-                
-                # --- BLACK SCREEN FIX: LOOPING LOGIC ---
                 if clip.duration < audio_clip.duration:
-                    # Calculate how many loops needed to cover audio
                     n_loops = int(np.ceil(audio_clip.duration / clip.duration)) + 1
                     clip = clip.loop(n_loops)
                 
-                # Trim to exact audio length
                 clip = clip.subclip(0, audio_clip.duration)
                 
-                # Resize and Crop to Vertical 9:16
+                # Resize/Crop to 9:16
                 clip = clip.resize(height=1920)
-                if clip.w < 1080:
-                    clip = clip.resize(width=1080)
+                if clip.w < 1080: clip = clip.resize(width=1080)
                 clip = clip.crop(x1=clip.w/2 - 540, width=1080, height=1920)
                 
-                # Apply Audio and Smooth Transitions
                 clip = clip.set_audio(audio_clip).fadein(0.4).fadeout(0.4)
                 final_clips.append(clip)
             except Exception as e:
@@ -244,6 +274,5 @@ def upload_to_youtube(file_path, metadata):
     except Exception as e: print(f"❌ Upload Failed: {e}")
 
 if __name__ == "__main__":
-    # anti_ban_sleep() # Uncomment for random delays
     v, m = main_pipeline()
     if v and m: upload_to_youtube(v, m)
