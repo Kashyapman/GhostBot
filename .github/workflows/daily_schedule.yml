@@ -1,19 +1,19 @@
-name: YouTube Automation Bot
+name: Daily GhostBot Upload
 
 on:
   schedule:
-    # Runs at 06:00 UTC (Story Mode) and 18:00 UTC (Fact Mode)
+    # Runs at 06:00 and 18:00 UTC (approx Morning/Evening)
     - cron: '0 6,18 * * *'
-  workflow_dispatch: # Allows you to run it manually from the Actions tab for testing
+  workflow_dispatch: # Allows manual trigger button
 
 jobs:
-  build-and-post:
+  run_bot:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # Grant permission to write/commit if needed later
+    # INCREASED TIMEOUT TO 6 HOURS
+    timeout-minutes: 360 
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -22,19 +22,16 @@ jobs:
           python-version: '3.10'
 
       - name: Install System Dependencies
-        # ffmpeg is required for MoviePy/Pydub audio processing
-        # libsndfile1 is required for the soundfile library
+        # Installs ffmpeg for video and sndfile for audio
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libsndfile1
 
       - name: Install Python Libraries
-        # Installs directly from your requirements.txt file
         run: |
-          pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Automation Script
+      - name: Run GhostBot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
