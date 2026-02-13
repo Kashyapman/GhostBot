@@ -135,11 +135,10 @@ class VoiceEngine:
         return filename
 
 # ==========================================
-# 🎨 PART 2: THE VISUAL ENGINE (PEXELS + AI)
+# 🎨 PART 2: THE VISUAL ENGINE
 # ==========================================
 
 def zoom_in_effect(clip, zoom_ratio=0.04):
-    """Creates a slow 'Ken Burns' zoom effect for static images."""
     def effect(get_frame, t):
         img = PIL.Image.fromarray(get_frame(t))
         base_size = img.size
@@ -155,10 +154,8 @@ def zoom_in_effect(clip, zoom_ratio=0.04):
     return clip.fl(effect)
 
 def generate_ai_image(prompt, filename):
-    """Uses Google Imagen to create a visual when Pexels fails."""
     print(f"🎨 Generating AI Image for: '{prompt}'...")
     try:
-        # We rely on the "auto" model selection for image gen
         model = genai.ImageGenerationModel("imagen-3.0-generate-001")
         result = model.generate_images(
             prompt=f"Cinematic horror photography, hyper-realistic, 8k, dark atmosphere: {prompt}",
@@ -174,7 +171,6 @@ def get_visual_clip(keyword, filename, duration):
     clean_keyword = " ".join(keyword.split()[:4])
     print(f"🎥 Finding Visual: '{clean_keyword}'")
     
-    # --- OPTION A: PEXELS VIDEO ---
     headers = {"Authorization": PEXELS_KEY}
     url = "https://api.pexels.com/videos/search"
     params = {"query": f"{clean_keyword} horror cinematic", "per_page": 3, "orientation": "portrait"}
@@ -200,7 +196,6 @@ def get_visual_clip(keyword, filename, duration):
             clip = clip.loop(duration=duration)
         return clip.subclip(0, duration)
 
-    # --- OPTION B: AI IMAGE GENERATION (Fallback) ---
     print("   ⚠️ No Pexels video found. Engaging AI Generator...")
     img_filename = filename.replace(".mp4", ".png")
     
@@ -209,12 +204,11 @@ def get_visual_clip(keyword, filename, duration):
         clip = zoom_in_effect(clip, zoom_ratio=0.04)
         return clip
     
-    # --- OPTION C: ULTIMATE FALLBACK ---
     print("   ❌ AI Generation Failed. Using Black Screen.")
     return ColorClip(size=(1080, 1920), color=(0,0,0), duration=duration)
 
 # ==========================================
-# 🎬 PART 3: THE DIRECTOR (QUOTA-PROOF MODE)
+# 🎬 PART 3: THE PATIENT DIRECTOR
 # ==========================================
 
 def anti_ban_sleep():
@@ -223,9 +217,30 @@ def anti_ban_sleep():
         print(f"🕵️ Anti-Ban: Napping for {sleep_sec}s...")
         time.sleep(sleep_sec)
 
+def get_real_models():
+    """Asks Google for the ACTUAL list of models available to you."""
+    genai.configure(api_key=GEMINI_KEY)
+    valid = []
+    try:
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                valid.append(m.name)
+    except: return []
+    # Sort: Flash -> Pro -> others
+    valid.sort(key=lambda x: 'flash' not in x)
+    return valid
+
 def generate_viral_script():
-    print("🧠 Director: Writing Script (Quota-Proof Mode)...")
+    print("🧠 Director: Writing Script (Patient Mode)...")
     
+    # 1. Get Real Models
+    models_to_try = get_real_models()
+    if not models_to_try:
+        # Fallback if list fails
+        models_to_try = ["models/gemini-2.0-flash", "models/gemini-1.5-flash"]
+    
+    print(f"   -> Available Models: {models_to_try}")
+
     niches = [
         "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", 
         "The Backrooms Level 0", "Rules for Night Shift Security", 
@@ -253,35 +268,32 @@ def generate_viral_script():
     
     safety = [{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}]
     
-    # --- QUOTA-PROOF ROTATION ---
-    # 1. Main Model (2.0 Flash)
-    # 2. Lite Model (Backup for Quota)
-    # 3. Legacy Model (Old faithful)
-    models_to_try = [
-        "gemini-2.0-flash", 
-        "gemini-2.0-flash-lite-preview-02-05", 
-        "gemini-1.0-pro"
-    ]
-    
-    genai.configure(api_key=GEMINI_KEY)
-
+    # 2. Try Models with PATIENCE
     for model_name in models_to_try:
-        try:
-            print(f"   Attempting generation with {model_name}...")
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt, safety_settings=safety)
-            
-            clean_text = response.text.strip().replace("```json", "").replace("```", "")
-            return json.loads(clean_text)
-            
-        except Exception as e:
-            if "429" in str(e):
-                print(f"   ⚠️ Quota exceeded for {model_name}. Switching...")
-                time.sleep(2) # Short pause before next model
-            elif "404" in str(e):
-                print(f"   ⚠️ Model {model_name} not found. Skipping...")
-            else:
-                print(f"   ⚠️ Error with {model_name}: {e}")
+        retries = 3
+        while retries > 0:
+            try:
+                print(f"   Attempting generation with {model_name}...")
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt, safety_settings=safety)
+                
+                clean_text = response.text.strip().replace("```json", "").replace("```", "")
+                return json.loads(clean_text)
+                
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str:
+                    # EXTRACT WAIT TIME or Default to 40s
+                    print(f"   ⚠️ Quota exceeded (429).")
+                    print("   ⏳ Waiting 40 seconds to cool down...")
+                    time.sleep(40) 
+                    retries -= 1
+                elif "404" in err_str:
+                    print(f"   ⚠️ Model {model_name} not found. Skipping.")
+                    break # Don't retry a 404
+                else:
+                    print(f"   ⚠️ Error: {e}")
+                    break
                 
     print("❌ All models exhausted. Script generation failed.")
     return None
@@ -330,7 +342,6 @@ def main_pipeline():
             
             video_file = f"temp_vid_{i}.mp4"
             
-            # --- THE MAGIC VISUAL SELECTOR ---
             clip = get_visual_clip(line["visual_keyword"], video_file, audio_clip.duration)
             
             if clip.w > 1080:
