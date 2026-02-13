@@ -42,13 +42,37 @@ def anti_ban_sleep():
             print(f"   ...waking in {i}s")
             time.sleep(min(30, i))
 
-def get_gemini_url():
-    # Use 1.5 Flash for speed and looser censorship
-    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+def get_working_gemini_url(prompt, payload_template):
+    """
+    SELF-HEALING MODEL SELECTOR:
+    Tries multiple Gemini model versions until one works.
+    """
+    models_to_try = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-pro",
+        "gemini-1.5-pro-latest",
+        "gemini-pro",
+        "gemini-1.0-pro"
+    ]
+    
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_KEY}"
+        try:
+            print(f"   ...Trying model: {model}")
+            r = requests.post(url, json=payload_template)
+            if r.status_code == 200:
+                print(f"   ✅ Success with {model}!")
+                return r
+            elif r.status_code == 429:
+                print("   ⚠️ Quota exceeded, waiting 10s...")
+                time.sleep(10)
+        except: pass
+        
+    return None
 
 def generate_viral_script():
     print("🧠 Director: Writing Script...")
-    url = get_gemini_url()
     
     niches = [
         "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", "The Backrooms Level 0",
@@ -91,9 +115,11 @@ def generate_viral_script():
     }
     
     try:
-        r = requests.post(url, json=payload)
-        if r.status_code != 200: 
-            print(f"❌ Gemini Error: {r.text}") # PRINT THE ERROR
+        # Use the Self-Healing Selector
+        r = get_working_gemini_url(prompt, payload)
+        
+        if not r: 
+            print("❌ All Gemini Models Failed.")
             return None
             
         raw = r.json()['candidates'][0]['content']['parts'][0]['text']
@@ -133,11 +159,9 @@ def download_visual(keyword, filename, duration):
     try:
         r = requests.get(url, headers=headers).json()
         if not r.get('videos'): 
-            # Fallback
             print("   -> No exact visual, trying fallback...")
             return download_visual("scary dark abstract horror", filename, duration)
         
-        # Smart Sort: Pick highest resolution
         best = r['videos'][0]
         for v in r['videos']:
             if v['width'] * v['height'] > best['width'] * best['height']:
