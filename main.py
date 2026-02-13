@@ -158,8 +158,7 @@ def generate_ai_image(prompt, filename):
     """Uses Google Imagen to create a visual when Pexels fails."""
     print(f"🎨 Generating AI Image for: '{prompt}'...")
     try:
-        # Use the same API key, but targeted for Image Gen
-        # Note: 'imagen-3.0-generate-001' is the current pro model
+        # We rely on the "auto" model selection for image gen
         model = genai.ImageGenerationModel("imagen-3.0-generate-001")
         result = model.generate_images(
             prompt=f"Cinematic horror photography, hyper-realistic, 8k, dark atmosphere: {prompt}",
@@ -172,11 +171,6 @@ def generate_ai_image(prompt, filename):
         return False
 
 def get_visual_clip(keyword, filename, duration):
-    """
-    Tier 1: Search Pexels Video
-    Tier 2: Generate AI Image -> Animate it
-    """
-    # Clean Keyword
     clean_keyword = " ".join(keyword.split()[:4])
     print(f"🎥 Finding Visual: '{clean_keyword}'")
     
@@ -202,7 +196,6 @@ def get_visual_clip(keyword, filename, duration):
     
     if video_found:
         clip = VideoFileClip(filename)
-        # Loop if too short
         if clip.duration < duration:
             clip = clip.loop(duration=duration)
         return clip.subclip(0, duration)
@@ -212,18 +205,16 @@ def get_visual_clip(keyword, filename, duration):
     img_filename = filename.replace(".mp4", ".png")
     
     if generate_ai_image(keyword, img_filename):
-        # Animate the static image
         clip = ImageClip(img_filename).set_duration(duration)
-        # Apply slow zoom
         clip = zoom_in_effect(clip, zoom_ratio=0.04)
         return clip
     
-    # --- OPTION C: ULTIMATE FALLBACK (Black Screen) ---
+    # --- OPTION C: ULTIMATE FALLBACK ---
     print("   ❌ AI Generation Failed. Using Black Screen.")
     return ColorClip(size=(1080, 1920), color=(0,0,0), duration=duration)
 
 # ==========================================
-# 🎬 PART 3: THE DIRECTOR
+# 🎬 PART 3: THE DIRECTOR (QUOTA-PROOF MODE)
 # ==========================================
 
 def anti_ban_sleep():
@@ -232,14 +223,8 @@ def anti_ban_sleep():
         print(f"🕵️ Anti-Ban: Napping for {sleep_sec}s...")
         time.sleep(sleep_sec)
 
-def configure_genai():
-    print("🔑 Authenticating with Google AI SDK...")
-    genai.configure(api_key=GEMINI_KEY)
-    return genai.GenerativeModel("gemini-2.0-flash")
-
 def generate_viral_script():
-    print("🧠 Director: Writing Script...")
-    model = configure_genai()
+    print("🧠 Director: Writing Script (Quota-Proof Mode)...")
     
     niches = [
         "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", 
@@ -266,14 +251,40 @@ def generate_viral_script():
     }}
     """
     
-    try:
-        safety = [{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}]
-        response = model.generate_content(prompt, safety_settings=safety)
-        clean_text = response.text.strip().replace("```json", "").replace("```", "")
-        return json.loads(clean_text)
-    except Exception as e: 
-        print(f"❌ Script Generation Failed: {e}")
-        return None
+    safety = [{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}]
+    
+    # --- QUOTA-PROOF ROTATION ---
+    # 1. Main Model (2.0 Flash)
+    # 2. Lite Model (Backup for Quota)
+    # 3. Legacy Model (Old faithful)
+    models_to_try = [
+        "gemini-2.0-flash", 
+        "gemini-2.0-flash-lite-preview-02-05", 
+        "gemini-1.0-pro"
+    ]
+    
+    genai.configure(api_key=GEMINI_KEY)
+
+    for model_name in models_to_try:
+        try:
+            print(f"   Attempting generation with {model_name}...")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt, safety_settings=safety)
+            
+            clean_text = response.text.strip().replace("```json", "").replace("```", "")
+            return json.loads(clean_text)
+            
+        except Exception as e:
+            if "429" in str(e):
+                print(f"   ⚠️ Quota exceeded for {model_name}. Switching...")
+                time.sleep(2) # Short pause before next model
+            elif "404" in str(e):
+                print(f"   ⚠️ Model {model_name} not found. Skipping...")
+            else:
+                print(f"   ⚠️ Error with {model_name}: {e}")
+                
+    print("❌ All models exhausted. Script generation failed.")
+    return None
 
 def add_sfx(audio_clip, text):
     text_lower = text.lower()
@@ -322,7 +333,6 @@ def main_pipeline():
             # --- THE MAGIC VISUAL SELECTOR ---
             clip = get_visual_clip(line["visual_keyword"], video_file, audio_clip.duration)
             
-            # Resize Logic
             if clip.w > 1080:
                 clip = clip.crop(x1=clip.w/2 - 540, width=1080, height=1920)
             elif clip.h < 1920:
