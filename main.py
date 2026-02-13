@@ -42,36 +42,39 @@ SFX_MAP = {
 def anti_ban_sleep():
     """Smart Heartbeat to keep GitHub Actions alive."""
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        sleep_sec = random.randint(60, 180) 
+        sleep_sec = random.randint(30, 90) # Faster for testing
         print(f"🕵️ Anti-Ban: Napping for {sleep_sec}s...")
-        for i in range(sleep_sec, 0, -30):
+        for i in range(sleep_sec, 0, -10):
             print(f"   ...waking in {i}s")
-            time.sleep(min(30, i))
+            time.sleep(min(10, i))
 
 def configure_genai():
-    """Authenticates and finds the best available model."""
+    """Authenticates and finds the best available model (Priority: 2.5 -> 2.0 -> 1.5)."""
     print("🔑 Authenticating with Google AI SDK...")
     genai.configure(api_key=GEMINI_KEY)
     
-    # List available models to find the correct name dynamically
-    best_model = "gemini-1.5-flash" # Default target
+    target_model = "gemini-2.0-flash" # Safe default
+    
     try:
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        print(f"   -> Found models: {available_models}")
+        # Get all available models
+        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        print(f"   -> Found available models: {len(all_models)} detected.")
         
-        # Priority Queue: Flash -> Pro -> Standard
-        if any('gemini-1.5-flash' in m for m in available_models):
-            best_model = 'gemini-1.5-flash'
-        elif any('gemini-1.5-pro' in m for m in available_models):
-            best_model = 'gemini-1.5-pro'
-        elif any('gemini-pro' in m for m in available_models):
-            best_model = 'gemini-pro'
+        # Priority Logic: Newer is better
+        if 'models/gemini-2.5-flash' in all_models:
+            target_model = 'models/gemini-2.5-flash'
+        elif 'models/gemini-2.0-flash' in all_models:
+            target_model = 'models/gemini-2.0-flash'
+        elif 'models/gemini-1.5-flash' in all_models:
+            target_model = 'models/gemini-1.5-flash'
+        elif all_models:
+            target_model = all_models[0] # Fallback to whatever is available
             
     except Exception as e:
-        print(f"   ⚠️ Model listing failed ({e}), defaulting to {best_model}")
+        print(f"   ⚠️ Model listing error ({e}), using default.")
 
-    print(f"   ✅ Selected Model: {best_model}")
-    return genai.GenerativeModel(best_model)
+    print(f"   ✅ Selected Model: {target_model}")
+    return genai.GenerativeModel(target_model)
 
 def generate_viral_script():
     print("🧠 Director: Writing Script (SDK Mode)...")
@@ -108,7 +111,7 @@ def generate_viral_script():
     """
     
     # --- SAFETY SETTINGS: ALLOW HORROR ---
-    # We turn off all blocks to ensure the scary story isn't filtered
+    # Unblock everything so the story isn't censored
     safety_settings = [
         { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
         { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
@@ -123,14 +126,13 @@ def generate_viral_script():
         clean_text = response.text.strip()
         if "```json" in clean_text:
             clean_text = clean_text.replace("```json", "").replace("```", "")
+        if "```" in clean_text:
+             clean_text = clean_text.replace("```", "")
         
         return json.loads(clean_text)
         
     except Exception as e: 
         print(f"❌ Script Generation Failed: {e}")
-        # Detailed error printing
-        if hasattr(e, 'response'):
-             print(f"   -> Feedback: {e.response.prompt_feedback}")
         return None
 
 def add_sfx(audio_clip, text):
@@ -187,7 +189,6 @@ def main_pipeline():
         voice_engine = VoiceEngine()
     except Exception as e:
         print(f"❌ Engine Start Error: {e}")
-        # Fallback to prevent crash if neural engine fails, but we really need it.
         return None, None
     
     # 2. Generate Story
