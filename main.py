@@ -36,22 +36,20 @@ SFX_MAP = {
 def anti_ban_sleep():
     """Smart Heartbeat to keep GitHub Actions alive."""
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        sleep_sec = random.randint(120, 480) 
+        sleep_sec = random.randint(60, 180) 
         print(f"🕵️ Anti-Ban: Napping for {sleep_sec}s...")
-        # Print heartbeat every 30s
         for i in range(sleep_sec, 0, -30):
             print(f"   ...waking in {i}s")
             time.sleep(min(30, i))
 
 def get_gemini_url():
-    # Try Flash first (Faster/Better for creative)
+    # Use 1.5 Flash for speed and looser censorship
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
 
 def generate_viral_script():
     print("🧠 Director: Writing Script...")
     url = get_gemini_url()
     
-    # --- CHAOS NICHE SELECTOR ---
     niches = [
         "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", "The Backrooms Level 0",
         "Rules for Night Shift Security", "The Rake Encounter", "Dead Internet Theory",
@@ -81,12 +79,28 @@ def generate_viral_script():
     }}
     """
     
+    # --- SAFETY SETTINGS: ALLOW HORROR ---
+    payload = {
+        "contents": [{ "parts": [{"text": prompt}] }],
+        "safetySettings": [
+            { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
+            { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
+            { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
+            { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
+        ]
+    }
+    
     try:
-        r = requests.post(url, json={ "contents": [{ "parts": [{"text": prompt}] }] })
-        if r.status_code != 200: return None
+        r = requests.post(url, json=payload)
+        if r.status_code != 200: 
+            print(f"❌ Gemini Error: {r.text}") # PRINT THE ERROR
+            return None
+            
         raw = r.json()['candidates'][0]['content']['parts'][0]['text']
         return json.loads(raw.replace("```json", "").replace("```", "").strip())
-    except: return None
+    except Exception as e: 
+        print(f"❌ Script Generation Failed: {e}")
+        return None
 
 def add_sfx(audio_clip, text):
     """Adds SFX layers intelligently."""
@@ -98,7 +112,6 @@ def add_sfx(audio_clip, text):
             path = os.path.join("sfx", v)
             if os.path.exists(path): sfx_path = path; break
     
-    # Ambience fallback (Static)
     if not sfx_path and random.random() < 0.25:
         path = os.path.join("sfx", "static.mp3")
         if os.path.exists(path): sfx_path = path
@@ -115,12 +128,14 @@ def add_sfx(audio_clip, text):
 def download_visual(keyword, filename, duration):
     print(f"🎥 Visual Search: {keyword}")
     headers = {"Authorization": PEXELS_KEY}
-    # Force 'Cinematic' and 'Dark' for consistency
     url = f"https://api.pexels.com/videos/search?query={keyword} cinematic dark horror 4k&per_page=5&orientation=portrait"
     
     try:
         r = requests.get(url, headers=headers).json()
-        if not r.get('videos'): return False
+        if not r.get('videos'): 
+            # Fallback
+            print("   -> No exact visual, trying fallback...")
+            return download_visual("scary dark abstract horror", filename, duration)
         
         # Smart Sort: Pick highest resolution
         best = r['videos'][0]
@@ -138,29 +153,36 @@ def main_pipeline():
     anti_ban_sleep()
     
     # 1. Initialize Neural Voice Engine
-    voice_engine = VoiceEngine()
+    try:
+        voice_engine = VoiceEngine()
+    except Exception as e:
+        print(f"❌ Engine Start Error: {e}")
+        return None, None
     
     # 2. Generate Story
     script = generate_viral_script()
-    if not script: return None, None
+    if not script: 
+        print("❌ Script was None. Stopping.")
+        return None, None
+    
     print(f"🎬 Title: {script['title']}")
 
     final_clips = []
     
     for i, line in enumerate(script["lines"]):
-        # A. Neural Voice Generation (God Mode)
-        wav_file = voice_engine.generate_acting_line(line["text"], i, line.get("mood", "neutral"))
-        
-        audio_clip = AudioFileClip(wav_file)
-        audio_clip = add_sfx(audio_clip, line["text"])
-        
-        # B. Video Download & Processing
-        video_file = f"temp_vid_{i}.mp4"
-        download_visual(line["visual_keyword"], video_file, audio_clip.duration)
-        
         try:
+            # A. Neural Voice Generation (God Mode)
+            wav_file = voice_engine.generate_acting_line(line["text"], i, line.get("mood", "neutral"))
+            
+            audio_clip = AudioFileClip(wav_file)
+            audio_clip = add_sfx(audio_clip, line["text"])
+            
+            # B. Video Download & Processing
+            video_file = f"temp_vid_{i}.mp4"
+            success = download_visual(line["visual_keyword"], video_file, audio_clip.duration)
+            if not success: continue
+
             clip = VideoFileClip(video_file)
-            # Smart Loop: If video is short, crossfade loop it
             if clip.duration < audio_clip.duration:
                 clip = clip.loop(duration=audio_clip.duration)
             clip = clip.subclip(0, audio_clip.duration)
@@ -175,7 +197,9 @@ def main_pipeline():
             final_clips.append(clip)
         except Exception as e: print(f"⚠️ Clip Error: {e}")
         
-    if not final_clips: return None, None
+    if not final_clips: 
+        print("❌ No final clips assembled.")
+        return None, None
 
     print("✂️ Rendering Final Master...")
     final = concatenate_videoclips(final_clips, method="compose")
