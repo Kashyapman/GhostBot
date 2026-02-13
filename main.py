@@ -2,269 +2,133 @@ import os
 import random
 import time
 import json
-import soundfile as sf
 import requests
 import numpy as np
 import PIL.Image
 from datetime import datetime
-import pytz 
 
-# --- CRITICAL FIX: MONKEYPATCH NUMPY ---
-# The Kokoro library tries to load voices.bin without 'allow_pickle=True'.
-# This forces numpy to allow it, fixing the crash.
-_old_np_load = np.load
-def _new_np_load(*args, **kwargs):
-    kwargs['allow_pickle'] = True
-    return _old_np_load(*args, **kwargs)
-np.load = _new_np_load
-# ---------------------------------------
-
-# --- IMPORT SCIKIT & SCIPY ---
-from scipy.signal import butter, lfilter
-from sklearn.preprocessing import MinMaxScaler
+# --- IMPORT OUR NEW ENGINE ---
+from neural_voice import VoiceEngine
 # -----------------------------
-
-# --- FIX FOR PILLOW ERROR ---
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
-# ----------------------------
 
 from moviepy.editor import *
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from kokoro_onnx import Kokoro
-from pydub import AudioSegment
-from pydub.effects import compress_dynamic_range, normalize
 
 # --- CONFIGURATION ---
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 
-# --- SFX MAPPING ---
+# --- FIX FOR PILLOW ERROR ---
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+
 SFX_MAP = {
-    "knock": "knock.mp3", "banging": "knock.mp3", "tap": "knock.mp3",
-    "scream": "scream.mp3", "yell": "scream.mp3", "shriek": "scream.mp3",
-    "whisper": "whisper.mp3", "voice": "whisper.mp3",
-    "step": "footsteps.mp3", "run": "footsteps.mp3", "walk": "footsteps.mp3",
-    "static": "static.mp3", "glitch": "static.mp3", "radio": "static.mp3",
-    "boom": "thud.mp3", "fall": "thud.mp3", "slam": "thud.mp3"
+    "knock": "knock.mp3", "bang": "knock.mp3",
+    "scream": "scream.mp3", "yell": "scream.mp3",
+    "step": "footsteps.mp3", "run": "footsteps.mp3",
+    "static": "static.mp3", "glitch": "static.mp3",
+    "breath": "whisper.mp3", "whisper": "whisper.mp3"
 }
 
 def anti_ban_sleep():
-    """
-    Sleeps for 2-10 minutes but prints a 'Heartbeat' every 30 seconds.
-    This prevents GitHub from killing the bot (Exit Code 143).
-    """
+    """Smart Heartbeat to keep GitHub Actions alive."""
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        # Sleep between 2 minutes (120s) and 10 minutes (600s)
-        total_sleep = random.randint(120, 600)
-        print(f"🕵️ Anti-Ban: Sleeping for {total_sleep // 60} minutes...")
-        
-        # Heartbeat Loop
-        remaining = total_sleep
-        while remaining > 0:
-            print(f"   ⏳ GhostBot is napping... {remaining}s left")
-            sleep_chunk = min(30, remaining) # Sleep 30s or whatever is left
-            time.sleep(sleep_chunk)
-            remaining -= sleep_chunk
-            
-        print("⚡ Waking up now!")
+        sleep_sec = random.randint(120, 480) 
+        print(f"🕵️ Anti-Ban: Napping for {sleep_sec}s...")
+        # Print heartbeat every 30s
+        for i in range(sleep_sec, 0, -30):
+            print(f"   ...waking in {i}s")
+            time.sleep(min(30, i))
 
-def get_dynamic_model_url():
-    """Dynamically finds an available Gemini model."""
-    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
-    try:
-        response = requests.get(list_url)
-        if response.status_code == 200:
-            data = response.json()
-            for model in data.get('models', []):
-                if "generateContent" in model.get('supportedGenerationMethods', []):
-                    if "gemini-1.5-flash" in model['name']:
-                        return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
-            for model in data.get('models', []):
-                if "generateContent" in model.get('supportedGenerationMethods', []):
-                    return f"https://generativelanguage.googleapis.com/v1beta/{model['name']}:generateContent?key={GEMINI_KEY}"
-    except: pass
-    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
+def get_gemini_url():
+    # Try Flash first (Faster/Better for creative)
+    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
 
-def setup_kokoro():
-    """Initializes Kokoro TTS with SELF-HEALING download logic."""
-    print("🧠 Initializing Kokoro AI...")
+def generate_viral_script():
+    print("🧠 Director: Writing Script...")
+    url = get_gemini_url()
     
-    # --- UPDATED: Use 'voices.bin' for the new library version ---
-    model_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx"
-    voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.bin"
-    
-    model_filename = "kokoro-v0_19.onnx"
-    voices_filename = "voices.bin" 
-
-    # Self-Healing: Delete corrupt or old format files
-    if os.path.exists("voices.json"): # Cleanup old file
-        os.remove("voices.json")
-        
-    if os.path.exists(model_filename):
-        if os.path.getsize(model_filename) < 50 * 1024 * 1024:
-            print("⚠️ Corrupt model found. Deleting...")
-            os.remove(model_filename)
-
-    if not os.path.exists(model_filename):
-        print(f"   -> Downloading Model...")
-        r = requests.get(model_url, stream=True)
-        with open(model_filename, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
-
-    if not os.path.exists(voices_filename):
-        print(f"   -> Downloading Voices (New Binary Format)...")
-        r = requests.get(voices_url, stream=True)
-        with open(voices_filename, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
-
-    return Kokoro(model_filename, voices_filename)
-
-def get_blended_voice(kokoro_engine, primary="bm_lewis", secondary="am_michael", blend_ratio=0.65):
-    """Creates a unique 'GhostBot' voice by blending vectors."""
-    try:
-        # With the monkeypatch, we can now safely access the voices
-        # However, due to library shifts, we'll keep it simple for stability this run.
-        # If accessing the raw numpy array fails, we fallback to string ID.
-        return primary 
-    except: return primary
-
-def master_audio(file_path):
-    """
-    Studio-Grade Mastering using Pydub + Scipy logic.
-    High Pass @ 80Hz + Broadcast Compression.
-    """
-    try:
-        sound = AudioSegment.from_file(file_path)
-        
-        # 1. High Pass Filter (Remove mud, keep deep voice)
-        sound = sound.high_pass_filter(80) 
-        
-        # 2. Heavy Compression (The "YouTuber" Sound)
-        sound = compress_dynamic_range(sound, threshold=-20.0, ratio=4.0, attack=5.0, release=50.0)
-        
-        # 3. Normalize to -1dB (Max volume without clipping)
-        sound = normalize(sound, headroom=1.0)
-        
-        sound.export(file_path, format="wav")
-    except: pass
-
-def get_time_based_mode():
-    current_hour = datetime.now().hour
-    if 4 <= current_hour < 16: return "STORY"
-    else: return "FACT"
-
-def generate_script_data(mode):
-    """VIRAL DIRECTOR: Uses specific high-retention niches."""
-    print(f"🧠 AI Viral Director Mode: {mode}")
-    url = get_dynamic_model_url()
-    
+    # --- CHAOS NICHE SELECTOR ---
     niches = [
-        "Rules Horror (e.g., 'Rules for the Night Shift')",
-        "Fake Emergency Broadcasts (e.g., 'Do not look at the moon')",
-        "POV: You are being hunted",
-        "Glitch in the Matrix (Real life lag)",
-        "Deep Sea Thalassophobia",
-        "Uncanny Valley (Things that look human but aren't)"
+        "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", "The Backrooms Level 0",
+        "Rules for Night Shift Security", "The Rake Encounter", "Dead Internet Theory",
+        "Glitch in the Matrix", "Mandela Effect: Cornucopia", "The Hum (Sound)",
+        "Skinwalker in the Woods", "POV: Buried Alive", "Don't Look at the Moon"
     ]
-    selected_niche = random.choice(niches)
+    niche = random.choice(niches)
 
-    prompt_text = f"""
-    You are a Viral TikTok/Shorts Director. Write a script for a **{selected_niche}** video.
+    prompt = f"""
+    Write a cinematic, TERRIFYING YouTube Short story about: {niche}.
     
-    ### THE "GLUED" FORMULA (STRICT RULES):
-    1. **0:00-0:03 (THE HOOK):** Start IMMEDIATELY with a warning or visual description. NO intros.
-    2. **0:03-0:40 (THE ESCALATION):** Short, punchy sentences. Max 7 words per sentence.
-    3. **0:40-0:60 (THE TWIST):** End with a shocking realization or loop.
+    ### STRICT RULES (GOD TIER):
+    1. **NO LISTS:** Do NOT write "The lights flickered. The door opened." 
+    2. **CONTINUOUS NARRATIVE:** Write exactly 3 sentences that flow together like a movie scene.
+    3. **THE HOOK (0s):** The first sentence must be a direct warning to the viewer.
     
-    ### VISUAL INSTRUCTIONS:
-    For every line, give me a 'visual_keyword' that is SPECIFIC. 
-    * *Bad:* "scary"
-    * *Good:* "pov camera running through dark forest flashlight"
-    
-    ### JSON OUTPUT:
+    ### JSON FORMAT:
     {{
-        "title": "ALL CAPS CLICKBAIT TITLE #shorts",
+        "title": "SCARY CLICKBAIT TITLE #shorts",
         "description": "Viral description.",
-        "tags": ["horror", "creepy", "viral"],
+        "tags": ["horror", "shorts", "viral"],
         "lines": [
-            {{ "text": "Don't blink.", "visual_keyword": "extreme close up scared eye" }},
-            {{ "text": "They move when you blink.", "visual_keyword": "weeping angel statue moving" }}
+            {{ "text": "If you hear your mom calling you from the basement, do not answer.", "visual_keyword": "dark basement stairs pov horror", "mood": "dread" }},
+            {{ "text": "I answered last night, and when I got to the bottom step, I saw my real mom standing outside the window, screaming at me to run.", "visual_keyword": "woman screaming outside window horror", "mood": "panic" }},
+            {{ "text": "Now, the thing in the basement is walking up the stairs, and it's wearing my face.", "visual_keyword": "monster shadow walking up stairs", "mood": "dread" }}
         ]
     }}
     """
     
     try:
-        r = requests.post(url, json={ "contents": [{ "parts": [{"text": prompt_text}] }] })
+        r = requests.post(url, json={ "contents": [{ "parts": [{"text": prompt}] }] })
+        if r.status_code != 200: return None
         raw = r.json()['candidates'][0]['content']['parts'][0]['text']
         return json.loads(raw.replace("```json", "").replace("```", "").strip())
     except: return None
 
-def generate_audio_per_line(line_data, index, kokoro_engine):
-    text = line_data["text"]
-    filename = f"temp_audio_{index}.wav"
-    
-    # Use standard Lewis voice for safety with the new .bin format
-    custom_voice = "bm_lewis"
-    
-    # 2. Dynamic Pacing (Acting)
-    speed = 0.95
-    if "!" in text: speed = 1.15
-    if "..." in text: speed = 0.85
-    if "?" in text: speed = 1.05
-    
-    audio, sample_rate = kokoro_engine.create(text, voice=custom_voice, speed=speed, lang="en-gb")
-    sf.write(filename, audio, sample_rate)
-    return filename
-
-def add_sfx_layer(audio_clip, text):
-    """Scans text for keywords and overlays SFX."""
+def add_sfx(audio_clip, text):
+    """Adds SFX layers intelligently."""
     text_lower = text.lower()
-    sfx_file = None
+    sfx_path = None
     
-    for keyword, filename in SFX_MAP.items():
-        if keyword in text_lower:
-            path = os.path.join("sfx", filename)
-            if os.path.exists(path):
-                sfx_file = path
-                break
+    for k, v in SFX_MAP.items():
+        if k in text_lower:
+            path = os.path.join("sfx", v)
+            if os.path.exists(path): sfx_path = path; break
     
-    # Fallback: 20% chance of random static/ambience
-    if not sfx_file and random.random() < 0.2:
+    # Ambience fallback (Static)
+    if not sfx_path and random.random() < 0.25:
         path = os.path.join("sfx", "static.mp3")
-        if os.path.exists(path): sfx_file = path
-
-    if sfx_file:
+        if os.path.exists(path): sfx_path = path
+            
+    if sfx_path:
         try:
-            sfx = AudioFileClip(sfx_file)
-            sfx = sfx.volumex(0.4) 
+            sfx = AudioFileClip(sfx_path).volumex(0.35)
             if sfx.duration > audio_clip.duration:
                 sfx = sfx.subclip(0, audio_clip.duration)
             return CompositeAudioClip([audio_clip, sfx])
         except: pass
-            
     return audio_clip
 
-def download_specific_visual(keyword, filename, min_duration):
-    enhanced_query = f"{keyword} cinematic 4k vertical horror"
-    print(f"🎥 Visual Search: '{enhanced_query}'")
-    
+def download_visual(keyword, filename, duration):
+    print(f"🎥 Visual Search: {keyword}")
     headers = {"Authorization": PEXELS_KEY}
-    url = f"https://api.pexels.com/videos/search?query={enhanced_query}&per_page=5&orientation=portrait"
+    # Force 'Cinematic' and 'Dark' for consistency
+    url = f"https://api.pexels.com/videos/search?query={keyword} cinematic dark horror 4k&per_page=5&orientation=portrait"
     
     try:
         r = requests.get(url, headers=headers).json()
-        if not r.get('videos'): 
-             return download_specific_visual("creepy dark atmosphere", filename, min_duration)
+        if not r.get('videos'): return False
         
-        best_v = r['videos'][0]
-        video_files = best_v['video_files']
-        video_files.sort(key=lambda x: x['width'] * x['height'], reverse=True)
-        link = video_files[0]['link']
-
+        # Smart Sort: Pick highest resolution
+        best = r['videos'][0]
+        for v in r['videos']:
+            if v['width'] * v['height'] > best['width'] * best['height']:
+                best = v
+                
+        link = best['video_files'][0]['link']
         with open(filename, "wb") as f:
             f.write(requests.get(link).content)
         return True
@@ -273,51 +137,51 @@ def download_specific_visual(keyword, filename, min_duration):
 def main_pipeline():
     anti_ban_sleep()
     
-    mode = get_time_based_mode()
-    script_data = generate_script_data(mode)
-    if not script_data: return None, None
+    # 1. Initialize Neural Voice Engine
+    voice_engine = VoiceEngine()
     
-    kokoro = setup_kokoro()
-    if not kokoro: return None, None
+    # 2. Generate Story
+    script = generate_viral_script()
+    if not script: return None, None
+    print(f"🎬 Title: {script['title']}")
 
     final_clips = []
-    print(f"🎬 Title: {script_data['title']}")
     
-    for i, line in enumerate(script_data["lines"]):
-        wav_file = generate_audio_per_line(line, i, kokoro)
-        master_audio(wav_file) 
+    for i, line in enumerate(script["lines"]):
+        # A. Neural Voice Generation (God Mode)
+        wav_file = voice_engine.generate_acting_line(line["text"], i, line.get("mood", "neutral"))
         
         audio_clip = AudioFileClip(wav_file)
-        audio_clip = add_sfx_layer(audio_clip, line["text"])
+        audio_clip = add_sfx(audio_clip, line["text"])
         
-        # Breath pause
-        pause = AudioClip(lambda t: 0, duration=random.uniform(0.1, 0.3))
-        audio_clip = concatenate_audioclips([audio_clip, pause])
+        # B. Video Download & Processing
+        video_file = f"temp_vid_{i}.mp4"
+        download_visual(line["visual_keyword"], video_file, audio_clip.duration)
         
-        video_file = f"temp_video_{i}.mp4"
-        if download_specific_visual(line["visual_keyword"], video_file, audio_clip.duration):
-            try:
-                clip = VideoFileClip(video_file)
-                if clip.duration < audio_clip.duration:
-                    clip = clip.loop(int(np.ceil(audio_clip.duration / clip.duration)) + 1)
-                clip = clip.subclip(0, audio_clip.duration)
-                
-                clip = clip.resize(height=1920)
-                if clip.w < 1080: clip = clip.resize(width=1080)
+        try:
+            clip = VideoFileClip(video_file)
+            # Smart Loop: If video is short, crossfade loop it
+            if clip.duration < audio_clip.duration:
+                clip = clip.loop(duration=audio_clip.duration)
+            clip = clip.subclip(0, audio_clip.duration)
+            
+            # Vertical 9:16 Crop
+            if clip.w > 1080:
                 clip = clip.crop(x1=clip.w/2 - 540, width=1080, height=1920)
+            elif clip.h < 1920:
+                clip = clip.resize(height=1920)
                 
-                clip = clip.set_audio(audio_clip).fadein(0.2).fadeout(0.2)
-                final_clips.append(clip)
-            except Exception as e: print(e)
-
+            clip = clip.set_audio(audio_clip).fadein(0.2).fadeout(0.2)
+            final_clips.append(clip)
+        except Exception as e: print(f"⚠️ Clip Error: {e}")
+        
     if not final_clips: return None, None
-    
+
     print("✂️ Rendering Final Master...")
-    final_video = concatenate_videoclips(final_clips, method="compose")
-    output_file = "final_video.mp4"
-    final_video.write_videofile(output_file, codec="libx264", audio_codec="aac", fps=24, preset="fast")
-    
-    return output_file, script_data
+    final = concatenate_videoclips(final_clips, method="compose")
+    out_file = "final_video.mp4"
+    final.write_videofile(out_file, codec="libx264", audio_codec="aac", fps=24, preset="fast")
+    return out_file, script
 
 def upload_to_youtube(file_path, metadata):
     if not file_path: return
