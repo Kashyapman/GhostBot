@@ -11,3 +11,4 @@ huggingface_hub
 pydub
 scipy
 scikit-learn
+pytz
