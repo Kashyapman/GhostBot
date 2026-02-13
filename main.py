@@ -7,9 +7,15 @@ import numpy as np
 import PIL.Image
 from datetime import datetime
 
-# --- IMPORT OUR NEW ENGINE ---
+# --- OFFICIAL GOOGLE AI SDK ---
+import google.generativeai as genai
+from google.api_core import retry
+# ------------------------------
+
+# --- IMPORT OUR NEURAL ENGINE ---
+# Ensure neural_voice.py exists in the same folder!
 from neural_voice import VoiceEngine
-# -----------------------------
+# --------------------------------
 
 from moviepy.editor import *
 from google.oauth2.credentials import Credentials
@@ -42,37 +48,35 @@ def anti_ban_sleep():
             print(f"   ...waking in {i}s")
             time.sleep(min(30, i))
 
-def get_working_gemini_url(prompt, payload_template):
-    """
-    SELF-HEALING MODEL SELECTOR:
-    Tries multiple Gemini model versions until one works.
-    """
-    models_to_try = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-pro",
-        "gemini-1.5-pro-latest",
-        "gemini-pro",
-        "gemini-1.0-pro"
-    ]
+def configure_genai():
+    """Authenticates and finds the best available model."""
+    print("🔑 Authenticating with Google AI SDK...")
+    genai.configure(api_key=GEMINI_KEY)
     
-    for model in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_KEY}"
-        try:
-            print(f"   ...Trying model: {model}")
-            r = requests.post(url, json=payload_template)
-            if r.status_code == 200:
-                print(f"   ✅ Success with {model}!")
-                return r
-            elif r.status_code == 429:
-                print("   ⚠️ Quota exceeded, waiting 10s...")
-                time.sleep(10)
-        except: pass
+    # List available models to find the correct name dynamically
+    best_model = "gemini-1.5-flash" # Default target
+    try:
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        print(f"   -> Found models: {available_models}")
         
-    return None
+        # Priority Queue: Flash -> Pro -> Standard
+        if any('gemini-1.5-flash' in m for m in available_models):
+            best_model = 'gemini-1.5-flash'
+        elif any('gemini-1.5-pro' in m for m in available_models):
+            best_model = 'gemini-1.5-pro'
+        elif any('gemini-pro' in m for m in available_models):
+            best_model = 'gemini-pro'
+            
+    except Exception as e:
+        print(f"   ⚠️ Model listing failed ({e}), defaulting to {best_model}")
+
+    print(f"   ✅ Selected Model: {best_model}")
+    return genai.GenerativeModel(best_model)
 
 def generate_viral_script():
-    print("🧠 Director: Writing Script...")
+    print("🧠 Director: Writing Script (SDK Mode)...")
+    
+    model = configure_genai()
     
     niches = [
         "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", "The Backrooms Level 0",
@@ -104,28 +108,29 @@ def generate_viral_script():
     """
     
     # --- SAFETY SETTINGS: ALLOW HORROR ---
-    payload = {
-        "contents": [{ "parts": [{"text": prompt}] }],
-        "safetySettings": [
-            { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
-            { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
-            { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
-            { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
-        ]
-    }
+    # We turn off all blocks to ensure the scary story isn't filtered
+    safety_settings = [
+        { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
+        { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
+        { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
+        { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
+    ]
     
     try:
-        # Use the Self-Healing Selector
-        r = get_working_gemini_url(prompt, payload)
+        response = model.generate_content(prompt, safety_settings=safety_settings)
         
-        if not r: 
-            print("❌ All Gemini Models Failed.")
-            return None
-            
-        raw = r.json()['candidates'][0]['content']['parts'][0]['text']
-        return json.loads(raw.replace("```json", "").replace("```", "").strip())
+        # Robust Text Cleaning
+        clean_text = response.text.strip()
+        if "```json" in clean_text:
+            clean_text = clean_text.replace("```json", "").replace("```", "")
+        
+        return json.loads(clean_text)
+        
     except Exception as e: 
         print(f"❌ Script Generation Failed: {e}")
+        # Detailed error printing
+        if hasattr(e, 'response'):
+             print(f"   -> Feedback: {e.response.prompt_feedback}")
         return None
 
 def add_sfx(audio_clip, text):
@@ -154,7 +159,7 @@ def add_sfx(audio_clip, text):
 def download_visual(keyword, filename, duration):
     print(f"🎥 Visual Search: {keyword}")
     headers = {"Authorization": PEXELS_KEY}
-    url = f"https://api.pexels.com/videos/search?query={keyword} cinematic dark horror 4k&per_page=5&orientation=portrait"
+    url = f"[https://api.pexels.com/videos/search?query=](https://api.pexels.com/videos/search?query=){keyword} cinematic dark horror 4k&per_page=5&orientation=portrait"
     
     try:
         r = requests.get(url, headers=headers).json()
@@ -163,6 +168,7 @@ def download_visual(keyword, filename, duration):
             return download_visual("scary dark abstract horror", filename, duration)
         
         best = r['videos'][0]
+        # Pick Highest Resolution
         for v in r['videos']:
             if v['width'] * v['height'] > best['width'] * best['height']:
                 best = v
@@ -181,6 +187,7 @@ def main_pipeline():
         voice_engine = VoiceEngine()
     except Exception as e:
         print(f"❌ Engine Start Error: {e}")
+        # Fallback to prevent crash if neural engine fails, but we really need it.
         return None, None
     
     # 2. Generate Story
