@@ -7,8 +7,10 @@ import numpy as np
 import PIL.Image
 from datetime import datetime
 
-# --- OFFICIAL GOOGLE AI SDK ---
-import google.generativeai as genai
+# --- NEW GOOGLE GEN AI SDK ---
+from google import genai
+from google.genai import types
+# -----------------------------
 
 # --- AUDIO & VIDEO LIBRARIES ---
 from moviepy.editor import *
@@ -16,7 +18,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from pydub import AudioSegment
-from neural_voice import VoiceEngine # Imports our new Bark Engine
+from neural_voice import VoiceEngine 
 
 # --- CONFIGURATION ---
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
@@ -44,21 +46,28 @@ def anti_ban_sleep():
         time.sleep(sleep_seconds)
 
 def get_real_models():
-    genai.configure(api_key=GEMINI_KEY)
+    """Asks Google for the ACTUAL list of models using new SDK."""
+    client = genai.Client(api_key=GEMINI_KEY)
     valid = []
     try:
-        for m in genai.list_models():
+        # New SDK listing method
+        for m in client.models.list():
+            # Check if it supports generation (simplified check)
             if 'generateContent' in m.supported_generation_methods:
                 valid.append(m.name)
     except: return []
-    valid.sort(key=lambda x: 'flash' not in x)
+    
+    # Prioritize Flash models
+    valid.sort(key=lambda x: 'flash' not in x.lower())
     return valid
 
 def generate_viral_script():
     print("🧠 Director: Writing Script (Bark Emotion Mode)...")
     
-    models_to_try = get_real_models()
-    if not models_to_try: models_to_try = ["models/gemini-2.0-flash", "models/gemini-1.5-flash"]
+    # Initialize New Client
+    client = genai.Client(api_key=GEMINI_KEY)
+    
+    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
     
     niches = [
         "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", 
@@ -90,15 +99,30 @@ def generate_viral_script():
     }}
     """
     
-    safety = [{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}]
+    # New Config for Safety
+    config = types.GenerateContentConfig(
+        safety_settings=[types.SafetySetting(
+            category="HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold="BLOCK_NONE"
+        )],
+        response_mime_type="application/json" # Enforce JSON output directly
+    )
     
     for model_name in models_to_try:
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt, safety_settings=safety)
-            clean_text = response.text.strip().replace("```json", "").replace("```", "")
-            return json.loads(clean_text)
-        except: continue
+            print(f"   Attempting generation with {model_name}...")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config
+            )
+            
+            # New SDK returns object, usually .text contains the response
+            raw_text = response.text
+            return json.loads(raw_text)
+        except Exception as e:
+            print(f"   ⚠️ Model {model_name} failed: {e}")
+            continue
                 
     return None
 
@@ -165,6 +189,7 @@ def main_pipeline():
     
     for i, line in enumerate(script["lines"]):
         try:
+            # Generate Audio using Bark Engine
             wav_file = voice_engine.generate_acting_line(line["text"], i, line.get("role", "narrator"))
             if not wav_file: continue
             
