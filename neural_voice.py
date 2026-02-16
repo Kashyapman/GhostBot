@@ -1,133 +1,100 @@
 import os
 import random
-import numpy as np
+import torch
 import soundfile as sf
-import requests
-import re
-from kokoro_onnx import Kokoro
+import numpy as np
+from transformers import AutoProcessor, BarkModel
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range, normalize
 
-# --- CRITICAL: BYPASS NUMPY SECURITY FOR KOKORO ---
-_old_np_load = np.load
-def _new_np_load(*args, **kwargs):
-    kwargs['allow_pickle'] = True
-    return _old_np_load(*args, **kwargs)
-np.load = _new_np_load
-# --------------------------------------------------
-
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing Neural Voice Engine...")
-        self.kokoro = self._setup_kokoro()
-        self.sample_rate = 24000 # Kokoro native rate
+        print("🎚️ Initializing Bark AI (Emotional Engine)...")
+        self.device = "cpu" # GitHub Actions is CPU-only
+        self.sample_rate = 24000
+        self.model, self.processor = self._setup_bark()
 
-    def _setup_kokoro(self):
-        # STABLE RELEASE LINKS
-        model_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx"
-        voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.bin"
+    def _setup_bark(self):
+        """Loads the Bark Small model (CPU safe)."""
+        print("   -> Loading Transformer Weights (This may take 2-3 mins)...")
+        # 'suno/bark-small' is used to prevent OOM errors on free runners
+        processor = AutoProcessor.from_pretrained("suno/bark-small")
+        model = BarkModel.from_pretrained("suno/bark-small").to(self.device)
         
-        model_filename = "kokoro-v0_19.onnx"
-        voices_filename = "voices.bin"
+        # Optimization: drastically reduces RAM usage
+        model.enable_cpu_offload() 
+        return model, processor
 
-        # Auto-Repair: Delete corrupt files
-        if os.path.exists(model_filename) and os.path.getsize(model_filename) < 50*1024*1024:
-            os.remove(model_filename)
+    def _get_voice_preset(self, role):
+        """Maps roles to specific Bark Speaker IDs."""
+        if role == "narrator":
+            return "v2/en_speaker_6" # Deep, reliable male
+        elif role == "victim":
+            return "v2/en_speaker_9" # Higher pitched, anxious female
+        elif role == "demon":
+            return "v2/en_speaker_6" # We will pitch-shift this later
+        return "v2/en_speaker_6"
+
+    def _preprocess_text(self, text, role):
+        """Injects Bark-specific tokens for emotion."""
+        text = text.replace("...", " ... ") # Ensure pauses are distinct
+        
+        if role == "victim":
+            # Add breathing/fear markers if not present
+            if "[gasps]" not in text and random.random() < 0.5:
+                text = f"[gasps] {text}"
+            if "!" in text:
+                text = text.replace("!", "! [gasps] ")
+                
+        elif role == "narrator":
+            # Slower pacing markers
+            text = f"... {text} ..."
             
-        if not os.path.exists(model_filename):
-            print("   -> Downloading Neural Weights...")
-            r = requests.get(model_url, stream=True)
-            with open(model_filename, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+        return text
 
-        if not os.path.exists(voices_filename):
-            print("   -> Downloading Voice Vectors...")
-            r = requests.get(voices_url, stream=True)
-            with open(voices_filename, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
-
-        return Kokoro(model_filename, voices_filename)
-
-    def _get_chimera_voice(self):
-        """
-        Mixes 'bm_lewis' (Deep Male) and 'af_bella' (Breath Female)
-        to create a unique, eerie storytelling voice.
-        """
-        try:
-            voices = self.kokoro.get_voices()
-            v1 = voices["bm_lewis"]
-            v2 = voices["af_bella"]
-            # 70% Lewis / 30% Bella = Deep but airy
-            return (v1 * 0.70) + (v2 * 0.30)
-        except:
-            return "bm_lewis" # Fallback
-
-    def generate_acting_line(self, text, index, mood="neutral"):
-        """
-        Parses text for acting cues and generates varied audio segments.
-        """
+    def generate_acting_line(self, text, index, role="narrator"):
+        """Generates audio with specific emotional direction."""
         filename = f"temp_voice_{index}.wav"
-        chimera_voice = self._get_chimera_voice()
         
-        # 1. Parse "Acting Chunks"
-        # Split by punctuation to control speed per phrase
-        raw_chunks = re.split(r'([!?.,])', text)
-        chunks = []
-        curr = ""
-        for p in raw_chunks:
-            curr += p
-            if p in "!?,.":
-                chunks.append(curr.strip())
-                curr = ""
-        if curr: chunks.append(curr.strip())
+        # 1. Prepare Text & Voice
+        processed_text = self._preprocess_text(text, role)
+        voice_preset = self._get_voice_preset(role)
+        
+        print(f"   🎙️ Bark Generating: '{processed_text}' ({role})...")
+        
+        # 2. Tokenize
+        inputs = self.processor(
+            text=[processed_text],
+            return_tensors="pt",
+            voice_preset=voice_preset
+        ).to(self.device)
 
-        # 2. Generate Audio Segments
-        audio_segments = []
+        # 3. Generate (High 'temperature' = more creative/emotional)
+        # We use a slightly lower temperature for stability on CPU
+        audio_array = self.model.generate(**inputs, coarse_temperature=0.6, fine_temperature=0.7)
+        audio_array = audio_array.cpu().numpy().squeeze()
         
-        for chunk in chunks:
-            if not chunk: continue
-            
-            # ACTING LOGIC: Determine Speed
-            speed = 0.95 # Default storytelling
-            if "!" in chunk: speed = 1.15 # Panic
-            elif "..." in chunk: speed = 0.8  # Suspense
-            elif "?" in chunk: speed = 1.05 # Confusion
-            elif "," in chunk: speed = 0.95 # Flow
-            
-            # Mood Overrides
-            if mood == "panic": speed *= 1.1
-            if mood == "dread": speed *= 0.85
+        # 4. Save Raw
+        temp_raw = "temp_raw.wav"
+        sf.write(temp_raw, audio_array, self.sample_rate)
+        
+        # 5. Post-Processing & Mastering
+        sound = AudioSegment.from_file(temp_raw)
+        
+        # DEMON FX: Pitch Shift Down
+        if role == "demon":
+            new_sample_rate = int(sound.frame_rate * 0.8) # Slow down/Deepen
+            sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_sample_rate})
+            sound = sound.set_frame_rate(24000)
 
-            # Generate Raw Audio
-            temp_file = f"temp_chunk_{random.randint(0,99999)}.wav"
-            audio, sr = self.kokoro.create(chunk, voice=chimera_voice, speed=speed, lang="en-gb")
-            sf.write(temp_file, audio, sr)
-            
-            # Convert to Pydub
-            seg = AudioSegment.from_file(temp_file)
-            audio_segments.append(seg)
-            
-            # 3. THE BREATH (Silence/Pause Logic)
-            pause_ms = 150
-            if "..." in chunk: pause_ms = 450
-            elif "." in chunk: pause_ms = 300
-            elif "!" in chunk: pause_ms = 100
-            
-            audio_segments.append(AudioSegment.silent(duration=pause_ms))
-            
-            try: os.remove(temp_file)
-            except: pass
-
-        # 4. Stitch
-        final_audio = sum(audio_segments)
+        # MASTERING (Warmth & loudness)
+        sound = sound.low_pass_filter(3500) # Remove digital hiss
+        sound = compress_dynamic_range(sound, threshold=-20.0, ratio=4.0)
+        sound = normalize(sound, headroom=1.0)
         
-        # 5. MASTERING
-        # High Pass (Clean Mud)
-        final_audio = final_audio.high_pass_filter(80)
-        # Compression (YouTuber Sound)
-        final_audio = compress_dynamic_range(final_audio, threshold=-20.0, ratio=4.0)
-        # Normalize
-        final_audio = normalize(final_audio, headroom=1.0)
+        sound.export(filename, format="wav")
         
-        final_audio.export(filename, format="wav")
+        # Cleanup
+        if os.path.exists(temp_raw): os.remove(temp_raw)
+        
         return filename
