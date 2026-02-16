@@ -7,9 +7,8 @@ requests
 pillow
 numpy
 soundfile
-kokoro-onnx
-huggingface_hub
-pydub
+transformers
+torch
 scipy
-scikit-learn
+pydub
 pytz
