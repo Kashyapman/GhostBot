@@ -120,7 +120,7 @@ def add_sfx(audio_clip, text):
     return audio_clip
 
 def get_visual_clip(keyword, filename, duration):
-    # Pexels Logic (Same as before)
+    # Pexels Logic 
     headers = {"Authorization": PEXELS_KEY}
     url = "https://api.pexels.com/videos/search"
     params = {"query": f"{keyword} horror cinematic", "per_page": 3, "orientation": "portrait"}
@@ -135,12 +135,10 @@ def get_visual_clip(keyword, filename, duration):
                 f.write(requests.get(link).content)
             
             clip = VideoFileClip(filename)
-            # Loop Fix
             if clip.duration < duration:
                 loops = int(np.ceil(duration / clip.duration)) + 1
                 clip = clip.loop(n=loops)
             
-            # Crop/Resize Logic
             clip = clip.subclip(0, duration)
             if clip.h < 1920: clip = clip.resize(height=1920)
             if clip.w < 1080: clip = clip.resize(width=1080)
@@ -167,8 +165,8 @@ def main_pipeline():
     
     for i, line in enumerate(script["lines"]):
         try:
-            # Generate Audio using Bark Engine
             wav_file = voice_engine.generate_acting_line(line["text"], i, line.get("role", "narrator"))
+            if not wav_file: continue
             
             audio_clip = AudioFileClip(wav_file)
             audio_clip = add_sfx(audio_clip, line["text"])
