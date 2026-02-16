@@ -23,8 +23,7 @@ class VoiceEngine:
         processor = AutoProcessor.from_pretrained("suno/bark-small")
         model = BarkModel.from_pretrained("suno/bark-small").to(self.device)
         
-        # ERROR FIX: Removed 'enable_cpu_offload()' because we are already on CPU.
-        # This prevents the "requires accelerate" crash.
+        # Removed enable_cpu_offload() to prevent 'accelerate' crash on CPU runners
         return model, processor
 
     def _get_voice_preset(self, role):
@@ -34,7 +33,7 @@ class VoiceEngine:
         elif role == "victim":
             return "v2/en_speaker_9" # Higher pitched, anxious female
         elif role == "demon":
-            return "v2/en_speaker_6" # Will be pitch-shifted later
+            return "v2/en_speaker_6" 
         return "v2/en_speaker_6"
 
     def _preprocess_text(self, text, role):
@@ -72,9 +71,18 @@ class VoiceEngine:
                 voice_preset=voice_preset
             ).to(self.device)
 
-            # 3. Generate 
-            # reduced max_length to prevent hanging
-            audio_array = self.model.generate(**inputs, coarse_temperature=0.6, fine_temperature=0.7)
+            # 3. Generate (FIXED PARAMETERS)
+            # We explicitly set max_new_tokens to 256 to override the conflicting default.
+            # do_sample=True ensures we use the temperatures provided.
+            audio_array = self.model.generate(
+                **inputs,
+                coarse_temperature=0.6,
+                fine_temperature=0.7,
+                max_new_tokens=256,  # Allows enough length for audio
+                do_sample=True,      # Explicitly enable sampling
+                pad_token_id=self.processor.tokenizer.pad_token_id # Safety for warning suppression
+            )
+            
             audio_array = audio_array.cpu().numpy().squeeze()
             
             # 4. Save Raw
