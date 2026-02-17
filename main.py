@@ -47,28 +47,40 @@ def anti_ban_sleep():
 
 def get_real_models():
     """Asks Google for the ACTUAL list of models using new SDK."""
+    print("   🔍 Scanning available models...")
     client = genai.Client(api_key=GEMINI_KEY)
     valid = []
     try:
-        # New SDK listing method
+        # List models and find ones that support content generation
         for m in client.models.list():
-            # Check if it supports generation (simplified check)
             if 'generateContent' in m.supported_generation_methods:
-                valid.append(m.name)
-    except: return []
+                # Filter out older/experimental models to reduce 404s
+                if 'gemini' in m.name and 'experimental' not in m.name:
+                    valid.append(m.name)
+    except Exception as e:
+        print(f"   ⚠️ Model scan failed: {e}")
+        return []
     
-    # Prioritize Flash models
-    valid.sort(key=lambda x: 'flash' not in x.lower())
+    # Sort to prefer Flash (faster/cheaper) -> Pro -> Others
+    valid.sort(key=lambda x: 0 if 'flash' in x else 1)
+    
+    # Clean up names (remove 'models/' prefix if present for cleaner logs)
+    valid = [m.replace('models/', '') for m in valid]
     return valid
 
 def generate_viral_script():
     print("🧠 Director: Writing Script (Bark Emotion Mode)...")
     
-    # Initialize New Client
     client = genai.Client(api_key=GEMINI_KEY)
     
-    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
+    # 1. DYNAMIC MODEL SELECTION
+    # Try to get real models, fallback to known good ones if scan fails
+    models_to_try = get_real_models()
+    if not models_to_try:
+        models_to_try = ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"]
     
+    print(f"   -> Will attempt these models in order: {models_to_try}")
+
     niches = [
         "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", 
         "The Backrooms Level 0", "Rules for Night Shift Security", 
@@ -99,31 +111,48 @@ def generate_viral_script():
     }}
     """
     
-    # New Config for Safety
     config = types.GenerateContentConfig(
         safety_settings=[types.SafetySetting(
             category="HARM_CATEGORY_DANGEROUS_CONTENT",
             threshold="BLOCK_NONE"
         )],
-        response_mime_type="application/json" # Enforce JSON output directly
+        response_mime_type="application/json"
     )
     
     for model_name in models_to_try:
-        try:
-            print(f"   Attempting generation with {model_name}...")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=config
-            )
-            
-            # New SDK returns object, usually .text contains the response
-            raw_text = response.text
-            return json.loads(raw_text)
-        except Exception as e:
-            print(f"   ⚠️ Model {model_name} failed: {e}")
-            continue
+        retries = 2
+        while retries > 0:
+            try:
+                print(f"   Attempting generation with {model_name}...")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=config
+                )
                 
+                raw_text = response.text
+                return json.loads(raw_text)
+            
+            except Exception as e:
+                error_msg = str(e).lower()
+                
+                # CASE 1: Rate Limit (429) -> WAIT AND RETRY
+                if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
+                    print(f"   ⚠️ Quota Exceeded for {model_name}. Waiting 60s...")
+                    time.sleep(60)
+                    retries -= 1
+                    
+                # CASE 2: Model Not Found (404) -> SKIP TO NEXT MODEL
+                elif "404" in error_msg or "not found" in error_msg:
+                    print(f"   ⚠️ Model {model_name} not found/supported. Skipping.")
+                    break # Break inner loop, go to next model
+                    
+                # CASE 3: Other Errors -> SKIP
+                else:
+                    print(f"   ⚠️ Error with {model_name}: {e}")
+                    break
+                
+    print("❌ All models exhausted. Script generation failed.")
     return None
 
 def add_sfx(audio_clip, text):
@@ -144,7 +173,6 @@ def add_sfx(audio_clip, text):
     return audio_clip
 
 def get_visual_clip(keyword, filename, duration):
-    # Pexels Logic 
     headers = {"Authorization": PEXELS_KEY}
     url = "https://api.pexels.com/videos/search"
     params = {"query": f"{keyword} horror cinematic", "per_page": 3, "orientation": "portrait"}
@@ -171,7 +199,6 @@ def get_visual_clip(keyword, filename, duration):
             return clip
     except: pass
     
-    # Fallback Black Screen
     return ColorClip(size=(1080, 1920), color=(0,0,0), duration=duration)
 
 def main_pipeline():
@@ -189,7 +216,6 @@ def main_pipeline():
     
     for i, line in enumerate(script["lines"]):
         try:
-            # Generate Audio using Bark Engine
             wav_file = voice_engine.generate_acting_line(line["text"], i, line.get("role", "narrator"))
             if not wav_file: continue
             
