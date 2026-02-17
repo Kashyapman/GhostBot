@@ -46,25 +46,26 @@ def anti_ban_sleep():
         time.sleep(sleep_seconds)
 
 def get_real_models():
-    """Asks Google for the ACTUAL list of models using new SDK."""
+    """Asks Google for the ACTUAL list of models using new SDK safely."""
     print("   🔍 Scanning available models...")
     client = genai.Client(api_key=GEMINI_KEY)
     valid = []
     try:
-        # List models and find ones that support content generation
         for m in client.models.list():
-            if 'generateContent' in m.supported_generation_methods:
-                # Filter out older/experimental models to reduce 404s
-                if 'gemini' in m.name and 'experimental' not in m.name:
-                    valid.append(m.name)
+            # Safely check for supported methods (New SDK compatibility)
+            methods = getattr(m, 'supported_generation_methods', [])
+            name = getattr(m, 'name', '')
+            
+            if 'generateContent' in methods:
+                valid.append(name)
     except Exception as e:
-        print(f"   ⚠️ Model scan failed: {e}")
+        print(f"   ⚠️ Model scan warning (using fallbacks): {e}")
         return []
     
-    # Sort to prefer Flash (faster/cheaper) -> Pro -> Others
-    valid.sort(key=lambda x: 0 if 'flash' in x else 1)
+    # Sort: Flash -> Pro -> Others
+    valid.sort(key=lambda x: 0 if 'flash' in x.lower() else 1)
     
-    # Clean up names (remove 'models/' prefix if present for cleaner logs)
+    # Clean up names (remove 'models/' prefix for cleaner logging, SDK handles it)
     valid = [m.replace('models/', '') for m in valid]
     return valid
 
@@ -73,13 +74,20 @@ def generate_viral_script():
     
     client = genai.Client(api_key=GEMINI_KEY)
     
-    # 1. DYNAMIC MODEL SELECTION
-    # Try to get real models, fallback to known good ones if scan fails
+    # 1. ROBUST MODEL SELECTION
+    # If scan fails, use these specific hardcoded versions which are more reliable
     models_to_try = get_real_models()
     if not models_to_try:
-        models_to_try = ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"]
+        models_to_try = [
+            "gemini-2.0-flash", 
+            "gemini-1.5-flash", 
+            "gemini-1.5-flash-001", 
+            "gemini-1.5-pro"
+        ]
     
-    print(f"   -> Will attempt these models in order: {models_to_try}")
+    # Ensure no duplicates and keep order
+    models_to_try = list(dict.fromkeys(models_to_try))
+    print(f"   -> Will attempt these models: {models_to_try}")
 
     niches = [
         "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", 
@@ -111,6 +119,7 @@ def generate_viral_script():
     }}
     """
     
+    # Safe Config
     config = types.GenerateContentConfig(
         safety_settings=[types.SafetySetting(
             category="HARM_CATEGORY_DANGEROUS_CONTENT",
@@ -130,24 +139,26 @@ def generate_viral_script():
                     config=config
                 )
                 
-                raw_text = response.text
-                return json.loads(raw_text)
+                if not response.text:
+                    raise ValueError("Empty response from API")
+
+                return json.loads(response.text)
             
             except Exception as e:
                 error_msg = str(e).lower()
                 
-                # CASE 1: Rate Limit (429) -> WAIT AND RETRY
-                if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
+                # RATE LIMIT (429) -> WAIT
+                if "429" in error_msg or "quota" in error_msg:
                     print(f"   ⚠️ Quota Exceeded for {model_name}. Waiting 60s...")
                     time.sleep(60)
                     retries -= 1
                     
-                # CASE 2: Model Not Found (404) -> SKIP TO NEXT MODEL
+                # NOT FOUND (404) -> NEXT MODEL
                 elif "404" in error_msg or "not found" in error_msg:
-                    print(f"   ⚠️ Model {model_name} not found/supported. Skipping.")
-                    break # Break inner loop, go to next model
-                    
-                # CASE 3: Other Errors -> SKIP
+                    print(f"   ⚠️ Model {model_name} not found. Skipping.")
+                    break 
+                
+                # OTHER -> SKIP
                 else:
                     print(f"   ⚠️ Error with {model_name}: {e}")
                     break
