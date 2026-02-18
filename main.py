@@ -12,7 +12,6 @@ from google import genai
 from google.genai import types
 # -----------------------------
 
-# --- AUDIO & VIDEO LIBRARIES ---
 from moviepy.editor import *
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -25,7 +24,6 @@ GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
 
-# --- FIX FOR PILLOW ERROR ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
@@ -40,54 +38,48 @@ SFX_MAP = {
 
 def anti_ban_sleep():
     """Random sleep to prevent YouTube spam detection."""
+    # Only sleep in production (GitHub Actions), not during testing
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        sleep_seconds = random.randint(300, 2700) # 5 to 45 mins
+        sleep_seconds = random.randint(300, 900) 
         print(f"🕵️ Anti-Ban: Sleeping for {sleep_seconds // 60} minutes...")
         time.sleep(sleep_seconds)
 
-def get_real_models():
-    """Asks Google for the ACTUAL list of models using new SDK safely."""
-    print("   🔍 Scanning available models...")
-    client = genai.Client(api_key=GEMINI_KEY)
-    valid = []
+def get_available_models(client):
+    """
+    Scans for usable models. Crucial for avoiding 404s.
+    Returns a list of valid model names like 'models/gemini-1.5-flash'
+    """
+    print("   🔍 Diagnosing available models for your API Key...")
+    valid_models = []
     try:
+        # List all models
         for m in client.models.list():
-            # Safely check for supported methods (New SDK compatibility)
-            methods = getattr(m, 'supported_generation_methods', [])
-            name = getattr(m, 'name', '')
-            
-            if 'generateContent' in methods:
-                valid.append(name)
+            # Check if it supports content generation
+            if 'generateContent' in m.supported_generation_methods:
+                valid_models.append(m.name)
     except Exception as e:
-        print(f"   ⚠️ Model scan warning (using fallbacks): {e}")
-        return []
+        print(f"   ⚠️ Diagnosis Warning: {e}")
+        # Fallback list if the list() call fails
+        return ["models/gemini-1.5-flash", "models/gemini-2.0-flash", "models/gemini-1.5-pro"]
+
+    # Sort: Flash models first (cheaper/faster)
+    valid_models.sort(key=lambda x: 0 if 'flash' in x.lower() else 1)
     
-    # Sort: Flash -> Pro -> Others
-    valid.sort(key=lambda x: 0 if 'flash' in x.lower() else 1)
-    
-    # Clean up names (remove 'models/' prefix for cleaner logging, SDK handles it)
-    valid = [m.replace('models/', '') for m in valid]
-    return valid
+    print(f"   ✅ Valid Models Found: {valid_models}")
+    return valid_models
 
 def generate_viral_script():
-    print("🧠 Director: Writing Script (Bark Emotion Mode)...")
+    print("🧠 Director: Writing Script (Business Mode)...")
     
     client = genai.Client(api_key=GEMINI_KEY)
     
-    # 1. ROBUST MODEL SELECTION
-    # If scan fails, use these specific hardcoded versions which are more reliable
-    models_to_try = get_real_models()
-    if not models_to_try:
-        models_to_try = [
-            "gemini-2.0-flash", 
-            "gemini-1.5-flash", 
-            "gemini-1.5-flash-001", 
-            "gemini-1.5-pro"
-        ]
+    # 1. GET VALID MODELS
+    # We ask the API "What can I use?" instead of guessing
+    models_to_try = get_available_models(client)
     
-    # Ensure no duplicates and keep order
-    models_to_try = list(dict.fromkeys(models_to_try))
-    print(f"   -> Will attempt these models: {models_to_try}")
+    if not models_to_try:
+        print("   ❌ No models found. Using Hardcoded Fallbacks.")
+        models_to_try = ["models/gemini-1.5-flash", "models/gemini-1.5-pro-latest"]
 
     niches = [
         "The 'Fake' Human (Uncanny Valley)", "Deep Sea Thalassophobia", 
@@ -119,7 +111,7 @@ def generate_viral_script():
     }}
     """
     
-    # Safe Config
+    # Config: Force JSON
     config = types.GenerateContentConfig(
         safety_settings=[types.SafetySetting(
             category="HARM_CATEGORY_DANGEROUS_CONTENT",
@@ -128,43 +120,55 @@ def generate_viral_script():
         response_mime_type="application/json"
     )
     
+    # 2. ROBUST GENERATION LOOP
     for model_name in models_to_try:
-        retries = 2
-        while retries > 0:
-            try:
-                print(f"   Attempting generation with {model_name}...")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=config
-                )
-                
-                if not response.text:
-                    raise ValueError("Empty response from API")
-
-                return json.loads(response.text)
+        try:
+            print(f"   Attempting generation with {model_name}...")
             
-            except Exception as e:
-                error_msg = str(e).lower()
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config
+            )
+            
+            if not response.text:
+                raise ValueError("Empty response received")
+
+            # Parse JSON
+            return json.loads(response.text)
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # RATE LIMIT (429): Don't wait 60s. Switch model immediately.
+            if "429" in error_msg or "quota" in error_msg:
+                print(f"   ⚠️ Rate Limit on {model_name}. Switching model instantly...")
+                continue # Skip to next model in loop
                 
-                # RATE LIMIT (429) -> WAIT
-                if "429" in error_msg or "quota" in error_msg:
-                    print(f"   ⚠️ Quota Exceeded for {model_name}. Waiting 60s...")
-                    time.sleep(60)
-                    retries -= 1
-                    
-                # NOT FOUND (404) -> NEXT MODEL
-                elif "404" in error_msg or "not found" in error_msg:
-                    print(f"   ⚠️ Model {model_name} not found. Skipping.")
-                    break 
+            # NOT FOUND (404): Just skip
+            elif "404" in error_msg or "not found" in error_msg:
+                print(f"   ⚠️ {model_name} not compatible. Skipping.")
+                continue
                 
-                # OTHER -> SKIP
-                else:
-                    print(f"   ⚠️ Error with {model_name}: {e}")
-                    break
-                
-    print("❌ All models exhausted. Script generation failed.")
-    return None
+            # OTHER ERRORS
+            else:
+                print(f"   ⚠️ Error: {e}")
+                continue
+
+    # 3. EMERGENCY FALLBACK (The "Show Must Go On" Logic)
+    # If ALL AI models fail, we return a pre-written generic script.
+    # This ensures your business never crashes even if Google is down.
+    print("❌ All AI Models Failed. Engaging Emergency Backup Script.")
+    return {
+        "title": "Don't Look Back #shorts",
+        "description": "A horror story generated by GhostBot Emergency Protocol.",
+        "tags": ["horror", "creepy"],
+        "lines": [
+            { "role": "narrator", "text": "There is a rule we all know. ... Never look in the mirror at 3 AM.", "visual_keyword": "broken mirror dark" },
+            { "role": "victim", "text": "[gasps] I saw something move behind me!", "visual_keyword": "scared eyes closeup" },
+            { "role": "narrator", "text": "But by the time you see it... it's already too late.", "visual_keyword": "glitch static" }
+        ]
+    }
 
 def add_sfx(audio_clip, text):
     text_lower = text.lower()
@@ -210,6 +214,7 @@ def get_visual_clip(keyword, filename, duration):
             return clip
     except: pass
     
+    # Fallback Black Screen
     return ColorClip(size=(1080, 1920), color=(0,0,0), duration=duration)
 
 def main_pipeline():
