@@ -3,21 +3,24 @@ import random
 import torch
 import soundfile as sf
 import numpy as np
-from transformers import AutoProcessor, BarkModel
+from transformers import AutoProcessor, BarkModel, GenerationConfig
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range, normalize
 
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing Bark AI (Cinematic Emotional Engine)...")
+        print("🎚️ Initializing Bark (Stable Mode)...")
         self.device = "cpu"
         self.sample_rate = 24000
         self.model, self.processor = self._setup_bark()
 
     def _setup_bark(self):
-        print("   -> Loading Bark Small (Optimized for CPU Stability)...")
         processor = AutoProcessor.from_pretrained("suno/bark-small")
-        model = BarkModel.from_pretrained("suno/bark-small").to(self.device)
+        model = BarkModel.from_pretrained(
+            "suno/bark-small",
+            tie_word_embeddings=False   # FIXES warning
+        ).to(self.device)
+
         return model, processor
 
     def _get_voice_preset(self, role):
@@ -31,16 +34,11 @@ class VoiceEngine:
     def _inject_emotion(self, text, role):
         text = text.replace("...", " ... ")
 
-        # Hook amplification
-        if random.random() < 0.3:
-            text = f"... {text}"
-
-        if role == "victim":
-            if "[gasps]" not in text and random.random() < 0.6:
+        if role == "victim" and "[gasps]" not in text:
+            if random.random() < 0.5:
                 text = f"[gasps] {text}"
-            text = text.replace("!", "! [gasps] ")
 
-        elif role == "demon":
+        if role == "demon":
             text = f"... {text} ..."
 
         return text
@@ -60,13 +58,14 @@ class VoiceEngine:
                 voice_preset=voice_preset
             ).to(self.device)
 
+            generation_config = GenerationConfig(
+                do_sample=True,
+                temperature=0.8
+            )
+
             audio_array = self.model.generate(
                 **inputs,
-                coarse_temperature=0.7,
-                fine_temperature=0.8,
-                max_new_tokens=300,
-                do_sample=True,
-                pad_token_id=self.processor.tokenizer.pad_token_id
+                generation_config=generation_config
             )
 
             audio_array = audio_array.cpu().numpy().squeeze()
@@ -77,8 +76,8 @@ class VoiceEngine:
             sound = AudioSegment.from_file(temp_raw)
 
             if role == "demon":
-                new_sample_rate = int(sound.frame_rate * 0.75)
-                sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_sample_rate})
+                new_rate = int(sound.frame_rate * 0.75)
+                sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
                 sound = sound.set_frame_rate(24000)
 
             sound = sound.low_pass_filter(4000)
