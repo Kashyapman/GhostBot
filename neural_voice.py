@@ -3,24 +3,21 @@ import random
 import torch
 import soundfile as sf
 import numpy as np
-from transformers import AutoProcessor, BarkModel, GenerationConfig
+from transformers import AutoProcessor, BarkModel
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range, normalize
 
+
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing Bark (Stable Mode)...")
+        print("🎚️ Initializing Bark (Ultra Stable Mode)...")
         self.device = "cpu"
         self.sample_rate = 24000
         self.model, self.processor = self._setup_bark()
 
     def _setup_bark(self):
         processor = AutoProcessor.from_pretrained("suno/bark-small")
-        model = BarkModel.from_pretrained(
-            "suno/bark-small",
-            tie_word_embeddings=False   # FIXES warning
-        ).to(self.device)
-
+        model = BarkModel.from_pretrained("suno/bark-small").to(self.device)
         return model, processor
 
     def _get_voice_preset(self, role):
@@ -34,8 +31,8 @@ class VoiceEngine:
     def _inject_emotion(self, text, role):
         text = text.replace("...", " ... ")
 
-        if role == "victim" and "[gasps]" not in text:
-            if random.random() < 0.5:
+        if role == "victim":
+            if "[gasps]" not in text and random.random() < 0.5:
                 text = f"[gasps] {text}"
 
         if role == "demon":
@@ -58,14 +55,11 @@ class VoiceEngine:
                 voice_preset=voice_preset
             ).to(self.device)
 
-            generation_config = GenerationConfig(
-                do_sample=True,
-                temperature=0.8
-            )
-
+            # IMPORTANT: No max_new_tokens, no generation_config
             audio_array = self.model.generate(
                 **inputs,
-                generation_config=generation_config
+                do_sample=True,
+                temperature=0.8
             )
 
             audio_array = audio_array.cpu().numpy().squeeze()
