@@ -59,8 +59,8 @@ def generate_viral_script():
     client = genai.Client(api_key=GEMINI_KEY)
 
     models_to_try = [
-        "models/gemini-2.5-flash",
-        "models/gemini-2.5-pro"
+        "models/gemini-2.5-pro",
+        "models/gemini-2.5-flash"
     ]
 
     niche = random.choice([
