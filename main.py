@@ -58,10 +58,9 @@ def generate_viral_script():
 
     client = genai.Client(api_key=GEMINI_KEY)
 
-    # Stable production models only
     models_to_try = [
-        "models/gemini-1.5-flash-latest",
-        "models/gemini-1.5-pro-latest"
+        "models/gemini-2.5-flash",
+        "models/gemini-2.5-pro"
     ]
 
     niche = random.choice([
@@ -77,9 +76,9 @@ You are an elite viral YouTube Shorts horror writer.
 
 TOPIC: {niche}
 
-RULES:
-- First line MUST stop scrolling immediately.
-- Short sentences (max 8 words).
+STRICT RULES:
+- First line MUST interrupt scrolling instantly.
+- Sentences max 8 words.
 - Escalate tension every 2 lines.
 - Add micro cliffhangers.
 - End unresolved.
@@ -87,13 +86,7 @@ RULES:
 - 6–9 lines total.
 - Designed for 35–50 seconds pacing.
 
-Use audio tags naturally:
-[gasps]
-[laughs]
-[sighs]
-...
-
-Return VALID JSON ONLY in this format:
+Return ONLY valid JSON in this format:
 
 {{
   "title": "High curiosity viral title #shorts",
@@ -103,7 +96,7 @@ Return VALID JSON ONLY in this format:
     {{
       "role": "narrator",
       "text": "Hook line",
-      "visual_keyword": "cinematic horror portrait"
+      "visual_keyword": "dark hallway portrait"
     }}
   ]
 }}
@@ -118,23 +111,31 @@ Return VALID JSON ONLY in this format:
     for model in models_to_try:
         try:
             print(f"Trying {model}...")
+
             response = client.models.generate_content(
                 model=model,
                 contents=prompt,
                 config=config
             )
 
-            if response.text:
-                data = json.loads(response.text)
+            if not response.text:
+                print("Empty response.")
+                continue
 
-                if "lines" in data and len(data["lines"]) >= 3:
-                    return data
+            data = json.loads(response.text)
+
+            if "lines" in data and len(data["lines"]) >= 6:
+                print(f"✅ Script generated with {model}")
+                return data
+            else:
+                print("Invalid structure returned.")
+                continue
 
         except Exception as e:
-            print(f"Model error: {e}")
+            print(f"❌ Model error ({model}): {e}")
             continue
 
-    print("⚠️ AI failed — using fallback script")
+    print("⚠️ All AI models failed — using fallback script")
 
     return {
         "title": "Don't Look Behind You #shorts",
@@ -142,8 +143,8 @@ Return VALID JSON ONLY in this format:
         "tags": ["horror", "shorts"],
         "lines": [
             {"role": "narrator", "text": "Stop scrolling. Now.", "visual_keyword": "dark hallway portrait"},
-            {"role": "victim", "text": "[gasps] I heard that.", "visual_keyword": "scared face closeup"},
-            {"role": "demon", "text": "You shouldn't have looked.", "visual_keyword": "shadow figure portrait"}
+            {"role": "victim", "text": "[gasps] Did you hear that?", "visual_keyword": "scared face closeup"},
+            {"role": "demon", "text": "You shouldn't have listened.", "visual_keyword": "shadow figure portrait"}
         ]
     }
 
