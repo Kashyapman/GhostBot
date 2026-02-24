@@ -22,10 +22,10 @@ jobs:
           python-version: '3.11'
 
       - name: Install System Dependencies
-        # Installs ffmpeg for video and sndfile for audio
+        # Installs ffmpeg for video, sndfile for audio, and sox for pydub
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libsndfile1
+          sudo apt-get install -y ffmpeg libsndfile1 sox
 
       - name: Install Python Libraries
         run: |
