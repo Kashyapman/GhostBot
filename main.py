@@ -10,7 +10,14 @@ import PIL.Image
 from google import genai
 from google.genai import types
 
-from moviepy.editor import *
+from moviepy import (
+    VideoFileClip,
+    AudioFileClip,
+    CompositeVideoClip,
+    CompositeAudioClip,
+    ColorClip,
+    concatenate_videoclips
+)
 from moviepy.video.fx.all import colorx
 from moviepy.audio.fx.all import audio_loop
 
