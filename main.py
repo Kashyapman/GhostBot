@@ -10,6 +10,7 @@ from google import genai
 from google.genai import types
 
 from moviepy.editor import *
+import moviepy.video.fx.all as vfx
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -18,15 +19,14 @@ from neural_voice import VoiceEngine
 
 # ================== CONFIG ================== #
 
-GEMINI_KEY = os.environ["GEMINI_API_KEY"]
-PEXELS_KEY = os.environ["PEXELS_API_KEY"]
-YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
+YOUTUBE_TOKEN_VAL = os.environ.get("YOUTUBE_TOKEN_JSON")
 
 if not hasattr(PIL.Image, "ANTIALIAS"):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
-
-# ================== SFX MAP ================== #
+# ================== AUDIO ASSETS ================== #
 
 SFX_MAP = {
     "knock": "knock.mp3",
@@ -41,6 +41,7 @@ SFX_MAP = {
     "whisper": "whisper.mp3"
 }
 
+BG_MUSIC_FILE = "sfx/creepy_bg_drone.mp3" # Add a low drone track here for best results
 
 # ================== ANTI BAN ================== #
 
@@ -51,59 +52,50 @@ def anti_ban_sleep():
         time.sleep(sleep_seconds)
 
 
-# ================== SCRIPT GENERATION ================== #
+# ================== SCRIPT ENGINEERING ================== #
 
 def generate_viral_script():
-    print("🧠 Generating High Retention Script...")
+    print("🧠 Generating Masterpiece Script...")
 
     client = genai.Client(api_key=GEMINI_KEY)
-
-    models_to_try = [
-        "models/gemini-2.5-pro",
-        "models/gemini-2.5-flash"
-    ]
+    models_to_try = ["models/gemini-2.5-pro", "models/gemini-2.5-flash"]
 
     niche = random.choice([
-        "The Mirror That Blinked",
-        "The Thing Under The Bed",
-        "The Fake Human Next Door",
-        "Unknown Caller at 3AM",
-        "The Door That Wasn't There Yesterday"
+        "The Reflection That Moved First",
+        "A glitch in reality caught on camera",
+        "Rules for surviving the night shift",
+        "The unsettling thing about the new house",
+        "A distress call from an unknown depth"
     ])
 
     prompt = f"""
-You are an elite viral YouTube Shorts horror writer.
+You are an elite YouTube Shorts horror storyteller. Your goal is absolute viewer retention.
+Write a 6-9 line script about: {niche}
 
-TOPIC: {niche}
+STRICT STORYTELLING RULES:
+1. THE HOOK (Line 1): Must violently interrupt scrolling. Raise an immediate, terrifying question.
+2. THE ESCALATION (Lines 2-5): Sentences max 8 words. Build psychological dread.
+3. THE TWIST/CLIFFHANGER (Last Line): End abruptly on a terrifying realization. Do NOT resolve the story.
+4. AI DIRECTING: Assign a specific voice type (e.g., 'deep_narrator', 'panicked_teen', 'creepy_whisper') and a driving emotion for every single line.
 
-STRICT RULES:
-- First line MUST interrupt scrolling instantly.
-- Sentences max 8 words.
-- Escalate tension every 2 lines.
-- Add micro cliffhangers.
-- End unresolved.
-- Psychological horror only.
-- 6–9 lines total.
-- Designed for 35–50 seconds pacing.
-
-Return ONLY valid JSON in this format:
-
+Return ONLY valid JSON in this exact format:
 {{
   "title": "High curiosity viral title #shorts",
   "description": "Curiosity driven description.",
-  "tags": ["horror", "shorts", "viral", "scary"],
+  "tags": ["horror", "scarystories", "creepy", "viral"],
   "lines": [
     {{
-      "role": "narrator",
-      "text": "Hook line",
-      "visual_keyword": "dark hallway portrait"
+      "voice_type": "deep_narrator",
+      "emotion": "ominous",
+      "text": "Look closely at the corner of your screen.",
+      "visual_keyword": "dark empty room shadowy"
     }}
   ]
 }}
 """
 
     config = types.GenerateContentConfig(
-        temperature=1.1,
+        temperature=1.2,
         top_p=0.95,
         response_mime_type="application/json"
     )
@@ -111,84 +103,56 @@ Return ONLY valid JSON in this format:
     for model in models_to_try:
         try:
             print(f"Trying {model}...")
+            response = client.models.generate_content(model=model, contents=prompt, config=config)
 
-            response = client.models.generate_content(
-                model=model,
-                contents=prompt,
-                config=config
-            )
-
-            if not response.text:
-                print("Empty response.")
-                continue
-
+            if not response.text: continue
             data = json.loads(response.text)
 
             if "lines" in data and len(data["lines"]) >= 6:
-                print(f"✅ Script generated with {model}")
+                print(f"✅ Master script generated via {model}")
                 return data
-            else:
-                print("Invalid structure returned.")
-                continue
 
         except Exception as e:
             print(f"❌ Model error ({model}): {e}")
             continue
 
-    print("⚠️ All AI models failed — using fallback script")
-
-    return {
-        "title": "Don't Look Behind You #shorts",
-        "description": "Something is standing there.",
-        "tags": ["horror", "shorts"],
-        "lines": [
-            {"role": "narrator", "text": "Stop scrolling. Now.", "visual_keyword": "dark hallway portrait"},
-            {"role": "victim", "text": "[gasps] Did you hear that?", "visual_keyword": "scared face closeup"},
-            {"role": "demon", "text": "You shouldn't have listened.", "visual_keyword": "shadow figure portrait"}
-        ]
-    }
+    return None
 
 
-# ================== SFX ================== #
+# ================== AUDIO MIXING ================== #
 
-def add_sfx(audio_clip, text):
+def mix_audio_track(base_audio_clip, text):
     text_lower = text.lower()
+    clips_to_mix = [base_audio_clip]
 
     for k, v in SFX_MAP.items():
         if k in text_lower:
             path = os.path.join("sfx", v)
             if os.path.exists(path):
                 try:
-                    sfx = AudioFileClip(path).volumex(0.35)
+                    sfx = AudioFileClip(path).volumex(0.6)
+                    if sfx.duration > base_audio_clip.duration:
+                        sfx = sfx.subclip(0, base_audio_clip.duration)
+                    clips_to_mix.append(sfx)
+                except: pass
 
-                    if sfx.duration > audio_clip.duration:
-                        sfx = sfx.subclip(0, audio_clip.duration)
-
-                    return CompositeAudioClip([audio_clip, sfx])
-                except:
-                    pass
-
-    return audio_clip
+    return CompositeAudioClip(clips_to_mix)
 
 
-# ================== VISUAL FETCH ================== #
+# ================== VISUALS & EFFECTS ================== #
 
-def get_visual_clip(keyword, filename, duration):
+def get_cinematic_clip(keyword, filename, duration):
     headers = {"Authorization": PEXELS_KEY}
     url = "https://api.pexels.com/videos/search"
-
-    params = {
-        "query": f"{keyword} horror cinematic dark portrait",
-        "per_page": 3,
-        "orientation": "portrait"
-    }
+    params = {"query": f"{keyword} horror cinematic dark", "per_page": 5, "orientation": "portrait"}
 
     try:
         r = requests.get(url, headers=headers, params=params)
         data = r.json()
 
         if data.get("videos"):
-            best = max(data["videos"], key=lambda x: x["width"] * x["height"])
+            # Pick a random video from top 3 to keep footage fresh
+            best = random.choice(data["videos"][:3])
             link = best["video_files"][0]["link"]
 
             with open(filename, "wb") as f:
@@ -202,20 +166,22 @@ def get_visual_clip(keyword, filename, duration):
 
             clip = clip.subclip(0, duration)
 
-            if clip.h < 1920:
-                clip = clip.resize(height=1920)
-
-            if clip.w < 1080:
-                clip = clip.resize(width=1080)
-
+            # Standardize resolution
+            if clip.h < 1920: clip = clip.resize(height=1920)
+            if clip.w < 1080: clip = clip.resize(width=1080)
             clip = clip.crop(x1=clip.w/2 - 540, width=1080, height=1920)
 
+            # POST-PROCESSING: Cinematic Horror Grading
+            clip = clip.fx(vfx.colorx, 0.7) # Darken image
+            clip = clip.fx(vfx.lum_contrast, lum=-10, contrast=20) # Add gritty contrast
+            
             return clip
 
-    except:
-        pass
+    except Exception as e:
+        print(f"Visual fetch failed: {e}")
 
-    return ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=duration)
+    # Fallback eerie red/black pulse if API fails
+    return ColorClip(size=(1080, 1920), color=(10, 0, 0), duration=duration)
 
 
 # ================== MAIN PIPELINE ================== #
@@ -223,61 +189,65 @@ def get_visual_clip(keyword, filename, duration):
 def main_pipeline():
     anti_ban_sleep()
 
-    try:
-        voice_engine = VoiceEngine()
-    except Exception as e:
-        print(f"Voice engine error: {e}")
-        return None, None
-
+    voice_engine = VoiceEngine()
     script = generate_viral_script()
+    if not script: return None, None
 
     print(f"🎬 Title: {script['title']}")
-
     final_clips = []
 
     for i, line in enumerate(script["lines"]):
         try:
+            # Pass dynamic voice and emotion from AI script
             wav_file = voice_engine.generate_acting_line(
-                line["text"],
-                i,
-                line.get("role", "narrator")
+                text=line["text"],
+                index=i,
+                voice_type=line.get("voice_type", "narrator"),
+                emotion=line.get("emotion", "neutral")
             )
 
-            if not wav_file:
-                continue
+            if not wav_file: continue
 
             audio_clip = AudioFileClip(wav_file)
-            audio_clip = add_sfx(audio_clip, line["text"])
+            final_audio = mix_audio_track(audio_clip, line["text"])
 
             video_file = f"temp_vid_{i}.mp4"
-            clip = get_visual_clip(
-                line["visual_keyword"],
-                video_file,
-                audio_clip.duration
-            )
+            # Add 0.5s padding for smooth crossfades
+            clip_duration = final_audio.duration + 0.5 
+            clip = get_cinematic_clip(line["visual_keyword"], video_file, clip_duration)
 
-            clip = clip.set_audio(audio_clip).fadein(0.2).fadeout(0.2)
+            # Sync audio and apply crossfade prep
+            clip = clip.set_audio(final_audio)
+            
+            # Apply fade in/out for smooth transitions between segments
+            clip = clip.crossfadein(0.5) if i > 0 else clip
 
             final_clips.append(clip)
 
         except Exception as e:
-            print(f"Clip error: {e}")
+            print(f"Clip error at index {i}: {e}")
 
     if not final_clips:
         print("❌ No clips generated.")
         return None, None
 
-    print("✂️ Rendering Final Video...")
+    print("✂️ Rendering Final Composition...")
 
-    final = concatenate_videoclips(final_clips, method="compose")
+    # Compose with crossfades
+    final_video = concatenate_videoclips(final_clips, padding=-0.5, method="compose")
+
+    # Add master background music track if available
+    if os.path.exists(BG_MUSIC_FILE):
+        bg_music = AudioFileClip(BG_MUSIC_FILE).volumex(0.15).loop(duration=final_video.duration)
+        final_mixed_audio = CompositeAudioClip([final_video.audio, bg_music])
+        final_video = final_video.set_audio(final_mixed_audio)
 
     output_file = "final_video.mp4"
-
-    final.write_videofile(
+    final_video.write_videofile(
         output_file,
         codec="libx264",
         audio_codec="aac",
-        fps=24,
+        fps=30, # Upgraded to 30fps for smoother shorts
         preset="fast"
     )
 
@@ -287,16 +257,11 @@ def main_pipeline():
 # ================== YOUTUBE UPLOAD ================== #
 
 def upload_to_youtube(file_path, metadata):
-    if not file_path:
-        return
-
+    if not file_path: return
     print("🚀 Uploading to YouTube...")
 
     try:
-        creds = Credentials.from_authorized_user_info(
-            json.loads(YOUTUBE_TOKEN_VAL)
-        )
-
+        creds = Credentials.from_authorized_user_info(json.loads(YOUTUBE_TOKEN_VAL))
         youtube = build("youtube", "v3", credentials=creds)
 
         youtube.videos().insert(
@@ -308,28 +273,16 @@ def upload_to_youtube(file_path, metadata):
                     "tags": metadata["tags"],
                     "categoryId": "24"
                 },
-                "status": {
-                    "privacyStatus": "public",
-                    "selfDeclaredMadeForKids": False
-                }
+                "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
             },
-            media_body=MediaFileUpload(
-                file_path,
-                chunksize=-1,
-                resumable=True
-            )
+            media_body=MediaFileUpload(file_path, chunksize=-1, resumable=True)
         ).execute()
 
         print("✅ Upload Successful")
-
     except Exception as e:
         print(f"❌ Upload failed: {e}")
 
-
-# ================== ENTRY ================== #
-
 if __name__ == "__main__":
     video_path, metadata = main_pipeline()
-
     if video_path and metadata:
         upload_to_youtube(video_path, metadata)
