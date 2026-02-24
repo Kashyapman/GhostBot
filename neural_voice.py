@@ -7,13 +7,13 @@ from qwen_tts import Qwen3TTSModel
 
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing Base Qwen3-TTS Engine...")
+        print("🎚️ Initializing Qwen3-TTS CustomVoice Engine...")
         self.device = "cpu"
         self.sample_rate = 24000
         
-        # Load one highly stable base model to prevent GitHub Actions from running out of RAM
+        # Load the CustomVoice variant to enable the .generate_custom_voice() method
         self.model = Qwen3TTSModel.from_pretrained(
-            "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+            "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
             device_map=self.device,
             dtype=torch.float32
         )
@@ -23,17 +23,14 @@ class VoiceEngine:
         requested_model = requested_model.lower()
         
         if "female" in requested_model or "high" in requested_model:
-            # Pitch up for female / higher voices
             new_rate = int(sound.frame_rate * 1.2)
             sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
             
         elif "deep" in requested_model or "cinematic" in requested_model:
-            # Pitch down slightly for deep cinematic voices
             new_rate = int(sound.frame_rate * 0.85)
             sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
             
         elif "distorted" in requested_model or "monster" in requested_model or "entity" in requested_model:
-            # Drastic pitch down and slow down for monsters/entities
             new_rate = int(sound.frame_rate * 0.70)
             sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
 
@@ -42,13 +39,15 @@ class VoiceEngine:
     def generate_acting_line(self, text, index, requested_model="Qwen-Standard", emotion="neutral"):
         filename = f"temp_voice_{index}.wav"
         
-        processed_text = f"({emotion}) {text}"
-        print(f"🎙️ Generating: '{processed_text}' | Using Model: {requested_model}")
+        print(f"🎙️ Generating: '{text}' | Emotion: {emotion} | Profile: {requested_model}")
 
         try:
-            wavs, sr = self.model.generate(
-                text=processed_text,
-                language="English"
+            # Use the correct API method and pass the AI's emotion into the 'instruct' parameter
+            wavs, sr = self.model.generate_custom_voice(
+                text=text,
+                language="English",
+                speaker="Ryan", # Default built-in dynamic English male speaker
+                instruct=f"Speak in a {emotion} tone. Style: {requested_model}"
             )
 
             temp_raw = "temp_raw.wav"
@@ -56,7 +55,7 @@ class VoiceEngine:
 
             sound = AudioSegment.from_file(temp_raw)
 
-            # Apply the AI's requested model style dynamically
+            # Apply additional programmatic voice morphing (Pitch shifting)
             sound = self._apply_model_morphing(sound, requested_model)
 
             # Post-Production Audio Mastering
