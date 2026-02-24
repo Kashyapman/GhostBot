@@ -1,66 +1,47 @@
-
 import os
 import torch
 import soundfile as sf
-from qwen_tts import Qwen3TTSModel
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range, normalize
 
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing Qwen3-TTS Engine...")
+        print("🎙 Initializing Qwen Emotional TTS...")
         self.device = "cpu"
-        
-        self.model = Qwen3TTSModel.from_pretrained(
-            "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice", 
-            device_map=self.device,
-            dtype=torch.float32,
-            attn_implementation="sdpa" 
-        )
+        self.sample_rate = 24000
+        self.model_id = "Qwen/Qwen2.5-TTS"
+        self.processor = AutoProcessor.from_pretrained(self.model_id)
+        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            self.model_id,
+            torch_dtype=torch.float32
+        ).to(self.device)
 
-    def get_speaker(self, role):
-        speakers = {
-            "narrator": "Ryan",
-            "victim": "Vivian",
-            "demon": "Aiden"
-        }
-        return speakers.get(role, "Ryan")
-
-    def generate_acting_line(self, text, index, role="narrator", emotion="Speak normally."):
+    def generate_line(self, text, emotion, index):
         filename = f"temp_voice_{index}.wav"
-        speaker = self.get_speaker(role)
 
-        print(f"🎙️ Generating: '{text}' (Voice: {speaker} | Emotion: {emotion})")
+        styled = f"<emotion:{emotion}> {text}"
 
-        try:
-            wavs, sr = self.model.generate_custom_voice(
-                language="English",
-                speaker=speaker,
-                instruct=emotion,
-                text=text
+        inputs = self.processor(
+            text=styled,
+            return_tensors="pt"
+        ).to(self.device)
+
+        with torch.no_grad():
+            speech = self.model.generate(
+                **inputs,
+                do_sample=True,
+                temperature=0.95,
+                top_p=0.9
             )
 
-            temp_raw = "temp_raw.wav"
-            sf.write(temp_raw, wavs[0], sr)
+        audio = speech.cpu().numpy().squeeze()
+        sf.write(filename, audio, self.sample_rate)
 
-            sound = AudioSegment.from_file(temp_raw)
+        # Post mastering
+        sound = AudioSegment.from_file(filename)
+        sound = compress_dynamic_range(sound, threshold=-18.0, ratio=3.5)
+        sound = normalize(sound, headroom=0.5)
+        sound.export(filename, format="wav")
 
-            if role == "demon":
-                new_rate = int(sound.frame_rate * 0.85)
-                sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
-                sound = sound.set_frame_rate(24000)
-
-            sound = sound.low_pass_filter(5000)
-            sound = compress_dynamic_range(sound, threshold=-20.0, ratio=4.0)
-            sound = normalize(sound, headroom=0.5)
-
-            sound.export(filename, format="wav")
-
-            if os.path.exists(temp_raw):
-                os.remove(temp_raw)
-
-            return filename
-
-        except Exception as e:
-            print(f"⚠️ Voice Generation Failed: {e}")
-            return None
+        return filename
