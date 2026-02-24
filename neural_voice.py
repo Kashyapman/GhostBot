@@ -1,47 +1,76 @@
 import os
 import torch
 import soundfile as sf
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range, normalize
+from qwen_tts import Qwen3TTSModel
 
 class VoiceEngine:
     def __init__(self):
-        print("🎙 Initializing Qwen Emotional TTS...")
+        print("🎚️ Initializing Base Qwen3-TTS Engine...")
         self.device = "cpu"
         self.sample_rate = 24000
-        self.model_id = "Qwen/Qwen2.5-TTS"
-        self.processor = AutoProcessor.from_pretrained(self.model_id)
-        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            self.model_id,
-            torch_dtype=torch.float32
-        ).to(self.device)
+        
+        # Load one highly stable base model to prevent GitHub Actions from running out of RAM
+        self.model = Qwen3TTSModel.from_pretrained(
+            "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+            device_map=self.device,
+            dtype=torch.float32
+        )
 
-    def generate_line(self, text, emotion, index):
+    def _apply_model_morphing(self, sound, requested_model):
+        """Morphs the base voice to match the AI's requested model style"""
+        requested_model = requested_model.lower()
+        
+        if "female" in requested_model or "high" in requested_model:
+            # Pitch up for female / higher voices
+            new_rate = int(sound.frame_rate * 1.2)
+            sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
+            
+        elif "deep" in requested_model or "cinematic" in requested_model:
+            # Pitch down slightly for deep cinematic voices
+            new_rate = int(sound.frame_rate * 0.85)
+            sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
+            
+        elif "distorted" in requested_model or "monster" in requested_model or "entity" in requested_model:
+            # Drastic pitch down and slow down for monsters/entities
+            new_rate = int(sound.frame_rate * 0.70)
+            sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
+
+        return sound.set_frame_rate(self.sample_rate)
+
+    def generate_acting_line(self, text, index, requested_model="Qwen-Standard", emotion="neutral"):
         filename = f"temp_voice_{index}.wav"
+        
+        processed_text = f"({emotion}) {text}"
+        print(f"🎙️ Generating: '{processed_text}' | Using Model: {requested_model}")
 
-        styled = f"<emotion:{emotion}> {text}"
-
-        inputs = self.processor(
-            text=styled,
-            return_tensors="pt"
-        ).to(self.device)
-
-        with torch.no_grad():
-            speech = self.model.generate(
-                **inputs,
-                do_sample=True,
-                temperature=0.95,
-                top_p=0.9
+        try:
+            wavs, sr = self.model.generate(
+                text=processed_text,
+                language="English"
             )
 
-        audio = speech.cpu().numpy().squeeze()
-        sf.write(filename, audio, self.sample_rate)
+            temp_raw = "temp_raw.wav"
+            sf.write(temp_raw, wavs[0], sr)
 
-        # Post mastering
-        sound = AudioSegment.from_file(filename)
-        sound = compress_dynamic_range(sound, threshold=-18.0, ratio=3.5)
-        sound = normalize(sound, headroom=0.5)
-        sound.export(filename, format="wav")
+            sound = AudioSegment.from_file(temp_raw)
 
-        return filename
+            # Apply the AI's requested model style dynamically
+            sound = self._apply_model_morphing(sound, requested_model)
+
+            # Post-Production Audio Mastering
+            sound = sound.low_pass_filter(6000)
+            sound = compress_dynamic_range(sound, threshold=-22.0, ratio=4.5)
+            sound = normalize(sound, headroom=0.8)
+
+            sound.export(filename, format="wav")
+
+            if os.path.exists(temp_raw):
+                os.remove(temp_raw)
+
+            return filename
+
+        except Exception as e:
+            print(f"⚠️ Voice Generation Failed: {e}")
+            return None
