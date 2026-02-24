@@ -1,82 +1,62 @@
 import os
-import random
 import torch
 import soundfile as sf
-import numpy as np
-from transformers import AutoProcessor, BarkModel
+from qwen_tts import Qwen3TTSModel #
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range, normalize
 
-
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing Bark (Ultra Stable Mode)...")
+        print("🎚️ Initializing Qwen3-TTS (Autobot)...")
         self.device = "cpu"
-        self.sample_rate = 24000
-        self.model, self.processor = self._setup_bark()
+        
+        # Using the 0.6B model for fast, reliable CPU inference
+        self.model = Qwen3TTSModel.from_pretrained(
+            "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice", 
+            device_map=self.device,
+            dtype=torch.float32,
+            attn_implementation="sdpa" #
+        )
 
-    def _setup_bark(self):
-        processor = AutoProcessor.from_pretrained("suno/bark-small")
-        model = BarkModel.from_pretrained("suno/bark-small").to(self.device)
-        return model, processor
-
-    def _get_voice_preset(self, role):
-        presets = {
-            "narrator": "v2/en_speaker_6",
-            "victim": "v2/en_speaker_9",
-            "demon": "v2/en_speaker_2"
+    def _get_voice_profile(self, role):
+        # Qwen3-TTS supports explicit emotional instructions
+        profiles = {
+            "narrator": ("Ryan", "Speak in a creepy, suspenseful, and low-pitched storytelling voice."),
+            "victim": ("Vivian", "Speak with extreme fear, panic, and a trembling voice."),
+            "demon": ("Aiden", "Speak in a terrifying, deep, distorted, and slow demonic voice.")
         }
-        return presets.get(role, "v2/en_speaker_6")
-
-    def _inject_emotion(self, text, role):
-        text = text.replace("...", " ... ")
-
-        if role == "victim":
-            if "[gasps]" not in text and random.random() < 0.5:
-                text = f"[gasps] {text}"
-
-        if role == "demon":
-            text = f"... {text} ..."
-
-        return text
+        return profiles.get(role, ("Ryan", "Speak in a suspenseful tone."))
 
     def generate_acting_line(self, text, index, role="narrator"):
         filename = f"temp_voice_{index}.wav"
+        speaker, instruct = self._get_voice_profile(role)
 
-        processed_text = self._inject_emotion(text, role)
-        voice_preset = self._get_voice_preset(role)
-
-        print(f"🎙️ Generating: '{processed_text}' ({role})")
+        print(f"🎙️ Generating: '{text}' (Voice: {speaker} | Emotion: {instruct})")
 
         try:
-            inputs = self.processor(
-                text=[processed_text],
-                return_tensors="pt",
-                voice_preset=voice_preset
-            ).to(self.device)
-
-            # IMPORTANT: No max_new_tokens, no generation_config
-            audio_array = self.model.generate(
-                **inputs,
-                do_sample=True,
-                temperature=0.8
+            # Generate audio using instructions and text
+            wavs, sr = self.model.generate_custom_voice(
+                language="English",
+                speaker=speaker,
+                instruct=instruct,
+                text=text
             )
 
-            audio_array = audio_array.cpu().numpy().squeeze()
-
             temp_raw = "temp_raw.wav"
-            sf.write(temp_raw, audio_array, self.sample_rate)
+            sf.write(temp_raw, wavs[0], sr) #
 
             sound = AudioSegment.from_file(temp_raw)
-
+            
+            # Post-processing for extra demonic distortion
             if role == "demon":
-                new_rate = int(sound.frame_rate * 0.75)
+                new_rate = int(sound.frame_rate * 0.85)
                 sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
                 sound = sound.set_frame_rate(24000)
 
-            sound = sound.low_pass_filter(4000)
-            sound = compress_dynamic_range(sound, threshold=-22.0, ratio=4.5)
-            sound = normalize(sound, headroom=0.8)
+            # Clean up and compress for loud YouTube Shorts audio
+            sound = sound.low_pass_filter(5000)
+            sound = compress_dynamic_range(sound, threshold=-20.0, ratio=4.0)
+            sound = normalize(sound, headroom=0.5)
 
             sound.export(filename, format="wav")
 
