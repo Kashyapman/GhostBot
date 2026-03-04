@@ -7,47 +7,43 @@ from qwen_tts import Qwen3TTSModel
 
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing Qwen3-TTS CustomVoice Engine...")
+        print("🎚️ Initializing True Crime Voice Engine...")
         self.device = "cpu"
         self.sample_rate = 24000
         
-        # Load the CustomVoice variant to enable the .generate_custom_voice() method
         self.model = Qwen3TTSModel.from_pretrained(
             "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
             device_map=self.device,
             dtype=torch.float32
         )
 
-    def _apply_model_morphing(self, sound, requested_model):
-        """Morphs the base voice to match the AI's requested model style"""
-        requested_model = requested_model.lower()
+    def _podcast_mastering(self, sound):
+        """Applies professional EQ and compression to sound like a high-end podcast."""
+        # 1. Very slight bass boost for that "movie trailer" authoritative depth
+        sound = sound.low_pass_filter(8000) 
         
-        if "female" in requested_model or "high" in requested_model:
-            new_rate = int(sound.frame_rate * 1.2)
-            sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
-            
-        elif "deep" in requested_model or "cinematic" in requested_model:
-            new_rate = int(sound.frame_rate * 0.85)
-            sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
-            
-        elif "distorted" in requested_model or "monster" in requested_model or "entity" in requested_model:
-            new_rate = int(sound.frame_rate * 0.70)
-            sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
+        # 2. Aggressive dynamic range compression (keeps quiet whispers and loud moments at same volume)
+        sound = compress_dynamic_range(sound, threshold=-18.0, ratio=5.0, attack=5.0, release=50.0)
+        
+        # 3. Normalize right to the ceiling so it punches through phone speakers
+        sound = normalize(sound, headroom=0.2)
+        
+        # 4. Strip out trailing silences at the end so the YouTube loop is instantaneous
+        sound = sound.strip_silence(silence_len=150, silence_thresh=-40, padding=50)
 
-        return sound.set_frame_rate(self.sample_rate)
+        return sound
 
-    def generate_acting_line(self, text, index, requested_model="Qwen-Standard", emotion="neutral"):
+    def generate_acting_line(self, text, index, emotion="serious"):
         filename = f"temp_voice_{index}.wav"
-        
-        print(f"🎙️ Generating: '{text}' | Emotion: {emotion} | Profile: {requested_model}")
+        print(f"🎙️ Generating: '{text}' | Emotion: {emotion}")
 
         try:
-            # Use the correct API method and pass the AI's emotion into the 'instruct' parameter
+            # We removed the crazy pitch shifts and rely entirely on Qwen's instruction engine
             wavs, sr = self.model.generate_custom_voice(
                 text=text,
                 language="English",
-                speaker="Ryan", # Default built-in dynamic English male speaker
-                instruct=f"Speak in a {emotion} tone. Style: {requested_model}"
+                speaker="Ryan", 
+                instruct=f"You are a professional true crime documentary narrator. Speak in a {emotion}, investigative, and intense tone."
             )
 
             temp_raw = "temp_raw.wav"
@@ -55,14 +51,8 @@ class VoiceEngine:
 
             sound = AudioSegment.from_file(temp_raw)
 
-            # Apply additional programmatic voice morphing (Pitch shifting)
-            sound = self._apply_model_morphing(sound, requested_model)
-
-            # Post-Production Audio Mastering
-            sound = sound.low_pass_filter(6000)
-            sound = compress_dynamic_range(sound, threshold=-22.0, ratio=4.5)
-            sound = normalize(sound, headroom=0.8)
-
+            # Master the audio
+            sound = self._podcast_mastering(sound)
             sound.export(filename, format="wav")
 
             if os.path.exists(temp_raw):
