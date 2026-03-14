@@ -18,18 +18,25 @@ class VoiceEngine:
         )
 
     def _podcast_mastering(self, sound):
-        """Applies professional EQ and compression to sound like a high-end podcast."""
-        # 1. Very slight bass boost for that "movie trailer" authoritative depth
-        sound = sound.low_pass_filter(8000) 
+        """Applies true crime pitch-shifting, EQ, and heavy compression."""
         
-        # 2. Aggressive dynamic range compression (keeps quiet whispers and loud moments at same volume)
-        sound = compress_dynamic_range(sound, threshold=-18.0, ratio=5.0, attack=5.0, release=50.0)
+        # 1. Pitch Drop & Pacing: Slow the audio down by 8%. 
+        # This makes the voice sound deeper, older, and more deliberate/suspenseful.
+        new_rate = int(sound.frame_rate * 0.92)
+        sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_rate})
+        sound = sound.set_frame_rate(self.sample_rate)
+
+        # 2. Dark EQ: Cut off high frequencies to remove "digital hiss" and keep it bass-heavy
+        sound = sound.low_pass_filter(6000) 
         
-        # 3. Normalize right to the ceiling so it punches through phone speakers
-        sound = normalize(sound, headroom=0.2)
+        # 3. Aggressive Compression: Simulates the narrator being right up against the microphone
+        sound = compress_dynamic_range(sound, threshold=-16.0, ratio=6.0, attack=2.0, release=100.0)
         
-        # 4. Strip out trailing silences at the end so the YouTube loop is instantaneous
-        sound = sound.strip_silence(silence_len=150, silence_thresh=-40, padding=50)
+        # 4. Maximize Volume
+        sound = normalize(sound, headroom=0.1)
+        
+        # 5. Snappy pacing: Trim dead air faster so the cuts feel more urgent
+        sound = sound.strip_silence(silence_len=100, silence_thresh=-45, padding=40)
 
         return sound
 
