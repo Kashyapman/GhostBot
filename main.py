@@ -119,6 +119,9 @@ Return ONLY valid JSON in this format:
                     return data
         except Exception as e:
             print(f"❌ Model error ({model}): {e}")
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                print("⏳ Quota hit during script generation. Sleeping 35s to let API reset...")
+                time.sleep(35)
             continue
 
     return None
@@ -232,7 +235,6 @@ def main_pipeline():
         
     print(f"🎬 Title: {script['title']}")
     
-    # Dynamically extract Gemini's casting choice
     target_voice = script.get("recommended_voice_model", "Charon")
     print(f"🎙️ AI Casted Narrator: {target_voice}")
     
@@ -240,7 +242,6 @@ def main_pipeline():
 
     for i, line in enumerate(script["lines"]):
         try:
-            # Send the acting text to the voice model, and clean text to the SFX model
             acting_input = line.get("acting_text", line.get("text"))
             clean_text = line.get("clean_text", line.get("text", ""))
 
@@ -279,7 +280,6 @@ def main_pipeline():
     print("✂️ Rendering Final Video with Transitions...")
     final_video = CompositeVideoClip(final_clips)
 
-    # --- ADD SUBTITLES ---
     temp_voice_track = "temp_master_voice.wav"
     final_video.audio.write_audiofile(temp_voice_track, fps=24000, logger=None)
     
@@ -288,7 +288,6 @@ def main_pipeline():
     if os.path.exists(temp_voice_track):
         os.remove(temp_voice_track)
 
-    # --- ADD BACKGROUND MUSIC ---
     print("🎵 Adding Background Music...")
     music_files = glob.glob("music/track*.mp3")
     
