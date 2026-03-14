@@ -6,8 +6,7 @@ numpy
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+google-cloud-texttospeech
 requests
-torch
 soundfile
-qwen-tts
 faster-whisper
