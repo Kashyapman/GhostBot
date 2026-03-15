@@ -54,7 +54,7 @@ def anti_ban_sleep():
 # ================== SCRIPT GENERATION ================== #
 
 def generate_viral_script():
-    print("🧠 Generating Screenplay-Engineered True Crime Script...")
+    print("🧠 Generating Master-Directed True Crime Script...")
 
     client = genai.Client(api_key=GEMINI_KEY)
     models_to_try = ["models/gemini-2.5-pro", "models/gemini-2.5-flash"]
@@ -68,23 +68,25 @@ def generate_viral_script():
     ])
 
     prompt = f"""
-You are an elite viral YouTube Shorts True Crime writer and an expert Voice Director.
+You are an elite viral YouTube Shorts True Crime writer and an Award-Winning Voice Director.
 
 TOPIC: {niche}
 
 STRICT RULES:
 1. THE HOOK: First line MUST be under 3 seconds and drop a massive, shocking fact immediately.
 2. THE LOOP: The script MUST end unresolved, grammatically flowing perfectly back into the first line.
-3. PACING & STAGE DIRECTIONS: Guide the AI voice actor using text formatting. 
-   - Use ellipses (...) for suspenseful dramatic pauses.
-   - Use ALL CAPS for shocking, emphasized words.
-   - Use bracketed stage directions like [whispering], [takes a deep breath], or [voice trembling] to dictate emotion.
-4. CASTING: Choose ONE specific voice model from this list to host the entire video:
+3. STYLE INSTRUCTIONS: Provide a specific `style_instruction` for each line describing the exact emotion, tone, and vocal posture the actor should use (e.g., "Hushed, terrified whisper as if afraid to be heard", "Cold, deadpan, and chilling").
+4. SSML MICRO-DIRECTION: Engineer the `acting_text` using strict SSML tags to force the AI to execute your style instruction.
+   - Use <prosody rate="slow" pitch="-2st" volume="soft"> for creepy lines.
+   - Use <prosody rate="fast" pitch="+1st" volume="loud"> for urgent panics.
+   - Use <break time="800ms"/> for agonizingly long, dramatic pauses.
+   - Use <emphasis level="strong"> on the most shocking words.
+5. CASTING: Choose ONE specific voice model to host the entire video:
    - "Charon" (Deep, gritty male)
    - "Fenrir" (Intense, heavy male)
-   - "Aoede" (Serious, investigative female)
-   - "Kore" (Calm, suspenseful female)
-5. VISUAL KEYWORDS: Invent highly specific, unique visual keywords for EVERY line (e.g., "muddy footprints on carpet", "rusty abandoned car in woods").
+   - "Aoede" (Serious, haunting female)
+   - "Kore" (Calm, unsettling female)
+6. VISUAL KEYWORDS: Invent highly specific visual keywords for EVERY line.
 
 Return ONLY valid JSON in this format:
 {{
@@ -94,7 +96,8 @@ Return ONLY valid JSON in this format:
   "recommended_voice_model": "Charon",
   "lines": [
     {{
-      "acting_text": "[takes a deep breath] He walked into the room... and VANISHED.",
+      "style_instruction": "Hushed, terrified whisper as if telling a dangerous secret.",
+      "acting_text": "<prosody volume='soft' rate='slow'>He walked into the room...</prosody> <break time='1s'/> <emphasis level='strong'>and vanished.</emphasis>",
       "clean_text": "He walked into the room and vanished.",
       "visual_keyword": "muddy footprints on carpet"
     }}
@@ -213,7 +216,7 @@ def add_dynamic_subtitles(video_clip, audio_path):
                 
                 subtitle_clips.append(txt_clip)
             except Exception as e:
-                print(f"⚠️ Failed to generate text clip for '{clean_word}': {e}")
+                pass
 
     print(f"✅ Generated {len(subtitle_clips)} word captions!")
     return CompositeVideoClip([video_clip] + subtitle_clips)
@@ -243,10 +246,13 @@ def main_pipeline():
     for i, line in enumerate(script["lines"]):
         try:
             acting_input = line.get("acting_text", line.get("text"))
+            style_instruction = line.get("style_instruction", "Serious and highly suspenseful.")
             clean_text = line.get("clean_text", line.get("text", ""))
 
+            # Pass BOTH the SSML and the Style Instruction to the engine
             wav_file = voice_engine.generate_acting_line(
                 acting_text=acting_input, 
+                style_instruction=style_instruction,
                 index=i, 
                 voice_name=target_voice
             )
@@ -299,7 +305,7 @@ def main_pipeline():
             final_audio = CompositeAudioClip([final_video.audio, bg_music])
             final_video = final_video.set_audio(final_audio)
         except Exception as e:
-            print(f"⚠️ Failed to apply BG music: {e}")
+            pass
 
     output_file = "final_video.mp4"
     final_video.write_videofile(
