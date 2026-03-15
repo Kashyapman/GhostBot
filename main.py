@@ -25,6 +25,7 @@ from neural_voice import VoiceEngine
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 YOUTUBE_TOKEN_VAL = os.environ["YOUTUBE_TOKEN_JSON"]
+CHANNEL_HANDLE = "@TheGlitchArchive" # Added for the watermark
 
 if not hasattr(PIL.Image, "ANTIALIAS"):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
@@ -51,10 +52,10 @@ def anti_ban_sleep():
         print(f"🕵️ Anti-Ban Sleep: {sleep_seconds//60} minutes")
         time.sleep(sleep_seconds)
 
-# ================== SCRIPT GENERATION ================== #
+# ================== SCRIPT & SEO GENERATION ================== #
 
 def generate_viral_script():
-    print("🧠 Generating Master-Directed True Crime Script...")
+    print("🧠 Generating Master-Directed Script & SEO Metadata...")
 
     client = genai.Client(api_key=GEMINI_KEY)
     models_to_try = ["models/gemini-2.5-pro", "models/gemini-2.5-flash"]
@@ -68,31 +69,31 @@ def generate_viral_script():
     ])
 
     prompt = f"""
-You are an elite viral YouTube Shorts True Crime writer and an Award-Winning Voice Director.
+You are an elite viral YouTube Shorts True Crime writer, an Award-Winning Voice Director, AND a Master YouTube SEO Expert.
 
 TOPIC: {niche}
 
 STRICT RULES:
 1. THE HOOK: First line MUST be under 3 seconds and drop a massive, shocking fact immediately.
 2. THE LOOP: The script MUST end unresolved, grammatically flowing perfectly back into the first line.
-3. STYLE INSTRUCTIONS: Provide a specific `style_instruction` for each line describing the exact emotion, tone, and vocal posture the actor should use (e.g., "Hushed, terrified whisper as if afraid to be heard", "Cold, deadpan, and chilling").
-4. SSML MICRO-DIRECTION: Engineer the `acting_text` using strict SSML tags to force the AI to execute your style instruction.
+3. STYLE INSTRUCTIONS: Provide a specific `style_instruction` for each line (e.g., "Hushed, terrified whisper", "Cold, deadpan, and chilling").
+4. SSML MICRO-DIRECTION: Engineer the `acting_text` using strict SSML tags.
    - Use <prosody rate="slow" pitch="-2st" volume="soft"> for creepy lines.
    - Use <prosody rate="fast" pitch="+1st" volume="loud"> for urgent panics.
-   - Use <break time="800ms"/> for agonizingly long, dramatic pauses.
-   - Use <emphasis level="strong"> on the most shocking words.
-5. CASTING: Choose ONE specific voice model to host the entire video:
-   - "Charon" (Deep, gritty male)
-   - "Fenrir" (Intense, heavy male)
-   - "Aoede" (Serious, haunting female)
-   - "Kore" (Calm, unsettling female)
+   - Use <break time="800ms"/> for dramatic pauses.
+   - Use <emphasis level="strong"> on shocking words.
+5. CASTING: Choose ONE specific voice model: "Charon" (gritty male), "Fenrir" (intense male), "Aoede" (haunting female), or "Kore" (unsettling female).
 6. VISUAL KEYWORDS: Invent highly specific visual keywords for EVERY line.
+7. YOUTUBE SEO (CRITICAL):
+   - title: Must be under 50 characters, use a "Curiosity Gap" to force clicks, and end with #shorts #truecrime.
+   - description: Start with a controversial or chilling question to drive comments, followed by 3 lines of high-volume SEO keywords.
+   - tags: Provide exactly 15 highly searched tags related to the niche (e.g., "unsolved mystery", "true crime documentary").
 
 Return ONLY valid JSON in this format:
 {{
-  "title": "High curiosity viral title #shorts #truecrime",
-  "description": "Curiosity driven description.",
-  "tags": ["truecrime", "mystery", "shorts", "unsolved"],
+  "title": "They found WHAT in the walls? #shorts #truecrime",
+  "description": "What would you do if you found this? Tell us below.\\n\\nTrue crime documentary, unsolved mysteries, scary stories...",
+  "tags": ["truecrime", "mystery", "shorts", "unsolved", "scary", "crime"],
   "recommended_voice_model": "Charon",
   "lines": [
     {{
@@ -118,7 +119,7 @@ Return ONLY valid JSON in this format:
             if response.text:
                 data = json.loads(response.text)
                 if "lines" in data and len(data["lines"]) > 0:
-                    print(f"✅ Script generated with {model}")
+                    print(f"✅ Script & SEO generated with {model}")
                     return data
         except Exception as e:
             print(f"❌ Model error ({model}): {e}")
@@ -182,7 +183,6 @@ def get_visual_clip(keyword, filename, duration):
             clip = clip.crop(x1=clip.w/2 - 540, width=1080, height=1920)
             return clip
     except Exception as e:
-        print(f"Pexels fetch failed: {e}")
         pass
         
     return ColorClip(size=(1080, 1920), color=(15, 15, 15), duration=duration)
@@ -237,6 +237,7 @@ def main_pipeline():
         return None, None
         
     print(f"🎬 Title: {script['title']}")
+    print(f"🏷️ Tags: {', '.join(script['tags'][:5])}...")
     
     target_voice = script.get("recommended_voice_model", "Charon")
     print(f"🎙️ AI Casted Narrator: {target_voice}")
@@ -249,7 +250,6 @@ def main_pipeline():
             style_instruction = line.get("style_instruction", "Serious and highly suspenseful.")
             clean_text = line.get("clean_text", line.get("text", ""))
 
-            # Pass BOTH the SSML and the Style Instruction to the engine
             wav_file = voice_engine.generate_acting_line(
                 acting_text=acting_input, 
                 style_instruction=style_instruction,
@@ -283,17 +283,31 @@ def main_pipeline():
         print("❌ No clips generated.")
         return None, None
 
-    print("✂️ Rendering Final Video with Transitions...")
+    print("✂️ Rendering Final Video with Transitions & Branding...")
     final_video = CompositeVideoClip(final_clips)
 
+    # --- ADD SUBTITLES ---
     temp_voice_track = "temp_master_voice.wav"
     final_video.audio.write_audiofile(temp_voice_track, fps=24000, logger=None)
-    
     final_video = add_dynamic_subtitles(final_video, temp_voice_track)
-    
     if os.path.exists(temp_voice_track):
         os.remove(temp_voice_track)
 
+    # --- ADD BRAND WATERMARK ---
+    try:
+        watermark = TextClip(
+            CHANNEL_HANDLE, 
+            fontsize=40, 
+            color='white', 
+            font='Impact', 
+            stroke_color='black', 
+            stroke_width=2
+        ).set_opacity(0.4).set_position(('center', 150)).set_duration(final_video.duration)
+        final_video = CompositeVideoClip([final_video, watermark])
+    except Exception as e:
+        print(f"⚠️ Could not add watermark: {e}")
+
+    # --- ADD BACKGROUND MUSIC ---
     print("🎵 Adding Background Music...")
     music_files = glob.glob("music/track*.mp3")
     
@@ -327,6 +341,8 @@ def upload_to_youtube(file_path, metadata):
     try:
         creds = Credentials.from_authorized_user_info(json.loads(YOUTUBE_TOKEN_VAL))
         youtube = build("youtube", "v3", credentials=creds)
+        
+        # We ensure all SEO tags and the optimized description are passed to YouTube
         youtube.videos().insert(
             part="snippet,status",
             body={
