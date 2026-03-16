@@ -33,21 +33,41 @@ def upload_to_facebook(video_path, caption):
         print(f"❌ Facebook upload error: {e}")
 
 def get_temp_public_url(file_path):
-    print("☁️ Uploading video to temporary host (Catbox) for Instagram...")
-    url = "https://catbox.moe/user/api.php"
-    data = {'reqtype': 'fileupload'}
+    print("☁️ Uploading video to temporary host for Instagram...")
     
+    # Method 1: Try file.io first (Bot-friendly, perfect for Meta API)
     try:
         with open(file_path, 'rb') as f:
-            files = {'fileToUpload': f}
-            response = requests.post(url, data=data, files=files)
-            
+            files = {'file': f}
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            response = requests.post("https://file.io", files=files, headers=headers)
+        
         if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                public_url = data.get('link')
+                print(f"✅ file.io upload successful! URL: {public_url}")
+                return public_url
+    except Exception as e:
+        print(f"⚠️ file.io attempt failed: {e}")
+
+    # Method 2: Fallback to Catbox with a spoofed browser User-Agent
+    print("☁️ Falling back to Catbox...")
+    try:
+        url = "https://catbox.moe/user/api.php"
+        data = {'reqtype': 'fileupload'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        
+        with open(file_path, 'rb') as f:
+            files = {'fileToUpload': f}
+            response = requests.post(url, data=data, files=files, headers=headers)
+            
+        if response.status_code == 200 and response.text.strip().startswith("http"):
             public_url = response.text.strip()
-            print(f"✅ Temporary upload successful! URL: {public_url}")
+            print(f"✅ Catbox upload successful! URL: {public_url}")
             return public_url
         else:
-            print(f"❌ Temporary upload failed: Status {response.status_code}")
+            print(f"❌ Temporary upload failed. Response: {response.text}")
             return None
     except Exception as e:
         print(f"❌ Error during temporary upload: {e}")
