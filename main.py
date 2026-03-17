@@ -25,7 +25,7 @@ import meta_upload
 # ================== CONFIG ================== #
 
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
-OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY") # <--- NEW: Fallback API Key
+OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY") 
 PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
 YOUTUBE_TOKEN_VAL = os.environ.get("YOUTUBE_TOKEN_JSON")
 CHANNEL_HANDLE = "@TheGlitchArchive" 
@@ -59,19 +59,18 @@ def anti_ban_sleep():
 # ================== MEMORY SYSTEM ================== #
 
 def get_past_topics():
-    """Reads the past topics to avoid repetition."""
     if not os.path.exists(TOPICS_FILE):
         return ""
     with open(TOPICS_FILE, "r", encoding="utf-8") as f:
         topics = f.read().splitlines()
-    return "\n".join(topics[-50:])
+    # Keep the last 100 cases to ensure a massive buffer against repetition
+    return "\n".join(topics[-100:])
 
-def save_new_topic(title):
-    """Appends the successful video title to the memory bank."""
+def save_new_topic(case_name):
     try:
         with open(TOPICS_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{title}\n")
-        print(f"💾 Saved '{title}' to memory bank.")
+            f.write(f"{case_name}\n")
+        print(f"💾 Saved '{case_name}' to memory bank.")
     except Exception as e:
         print(f"⚠️ Failed to save topic: {e}")
 
@@ -83,13 +82,39 @@ def generate_viral_script():
     client = genai.Client(api_key=GEMINI_KEY)
     models_to_try = ["models/gemini-2.5-pro", "models/gemini-2.5-flash"]
     
+    content_pool = [
+        "Bizarre Unsolved Disappearances",
+        "Impossible Heists and Robberies",
+        "People Who Faked Their Own Deaths",
+        "Crimes Solved Decades Later",
+        "Real-life Glitches in the Matrix",
+        "Creepy Mandela Effects",
+        "Unexplained Time Slips",
+        "Bizarre and Impossible Coincidences",
+        "Bizarre Historical Artifacts That Shouldn't Exist",
+        "Lost Civilizations and Vanished Towns",
+        "Creepy Unsolved Mysteries from the 1800s",
+        "Unexplained Deep Sea Anomalies and Sounds",
+        "Ghost Ships Found Completely Abandoned",
+        "Creepy Hijacked TV and Radio Broadcasts",
+        "Mysterious Number Stations from the Cold War",
+        "Unsolved Internet Rabbit Holes"
+    ]
+    
+    niche = random.choice(content_pool)
+    print(f"🎲 Selected Category for Today: {niche}")
+    
     past_topics = get_past_topics()
-    avoid_instruction = f"CRITICAL: Do NOT write about these topics, we have already covered them:\n{past_topics}\n" if past_topics else "No past topics yet."
+    avoid_instruction = f"CRITICAL: Do NOT write about these specific historical cases, we have already covered them:\n{past_topics}\n" if past_topics else "No past topics yet."
 
     prompt = f"""
-You are an elite viral YouTube Shorts True Crime writer, an Award-Winning Voice Director, AND a Master YouTube SEO Expert.
+You are an elite viral YouTube Shorts writer, an Award-Winning Voice Director, AND a Master YouTube SEO Expert.
+Your channel is called "The Glitch Archive" focusing on dark, eerie, and baffling stories.
 
-Your task is to write a highly engaging, high-retention short-form script about a highly specific, obscure true crime case, unsolved mystery, or bizarre historical event. Do not invent a fake story; use a real, documented case, but focus on the most baffling aspects.
+TODAY'S TOPIC CATEGORY: {niche}
+
+Your task is to write a highly engaging, high-retention short-form script about a highly specific, obscure case or event that fits this category. 
+Do not invent a fake story; use a real, documented case, historical event, or widely reported anomaly, but focus on the most baffling aspects.
 
 {avoid_instruction}
 
@@ -104,15 +129,17 @@ STRICT STORYTELLING RULES:
 5. CASTING: Choose ONE specific voice model: "Charon" (gritty male), "Fenrir" (intense male), "Aoede" (haunting female), or "Kore" (unsettling female).
 6. VISUAL KEYWORDS: Invent highly specific visual keywords for EVERY line to ensure high-quality B-roll fetching.
 7. YOUTUBE SEO:
-   - title: Must be under 50 characters, use a "Curiosity Gap", and end with #shorts #truecrime.
+   - title: Must be under 50 characters, use a "Curiosity Gap", and end with #shorts #mystery.
+   - case_name: Provide the actual historical name of the event/case so we can log it (e.g. "The Wow! Signal" or "The Disappearance of Lars Mittank").
    - description: Start with a chilling question to drive comments, followed by 3 lines of high-volume SEO keywords.
-   - tags: Provide exactly 15 highly searched tags related to the specific case.
+   - tags: Provide exactly 15 highly searched tags related to the specific case and the broader mystery genre.
 
 Return ONLY valid JSON in this format:
 {{
-  "title": "They found WHAT in the walls? #shorts #truecrime",
-  "description": "What would you do if you found this? Tell us below.\\n\\nTrue crime documentary, unsolved mysteries, scary stories...",
-  "tags": ["truecrime", "mystery", "shorts", "unsolved", "scary", "crime"],
+  "title": "They found WHAT in the walls? #shorts #mystery",
+  "case_name": "The Discovery of the Somerton Man",
+  "description": "What would you do if you found this? Tell us below.\\n\\nUnsolved mysteries, scary stories, true crime documentary...",
+  "tags": ["mystery", "shorts", "unsolved", "scary", "glitch", "creepy"],
   "recommended_voice_model": "Charon",
   "lines": [
     {{
@@ -131,7 +158,6 @@ Return ONLY valid JSON in this format:
         response_mime_type="application/json"
     )
 
-    # 1. Primary Strategy: Try Gemini Models
     for model in models_to_try:
         try:
             print(f"Trying {model}...")
@@ -148,7 +174,6 @@ Return ONLY valid JSON in this format:
                 time.sleep(5)
             continue
 
-    # 2. Fallback Strategy: OpenRouter (Llama 3.3)
     if OPENROUTER_KEY:
         print("🔄 Gemini exhausted/failed. Falling back to OpenRouter (Llama 3.3 70B)...")
         try:
@@ -165,7 +190,6 @@ Return ONLY valid JSON in this format:
             
             if r.status_code == 200:
                 response_content = r.json()['choices'][0]['message']['content']
-                # Clean up markdown code blocks if Llama formats it with ```json
                 cleaned_content = response_content.replace("```json", "").replace("```", "").strip()
                 data = json.loads(cleaned_content)
                 
@@ -184,19 +208,18 @@ def generate_meta_caption(metadata):
     client = genai.Client(api_key=GEMINI_KEY)
     
     prompt = f"""
-    Write a highly engaging, suspenseful caption for a Facebook Reel and Instagram Reel about this True Crime video:
+    Write a highly engaging, suspenseful caption for a Facebook Reel and Instagram Reel about this mystery video:
     Video Title: {metadata['title']}
     Video Description: {metadata['description']}
 
     RULES:
     - The tone should be captivating and mysterious.
     - Include a call to action asking viewers to comment their thoughts.
-    - Include 5-7 highly relevant, trending hashtags (e.g. #TrueCrime #Mystery).
+    - Include 5-7 highly relevant, trending hashtags (e.g. #Mystery #Unsolved #Glitch).
     - Do not use any quotation marks around the final output.
     - Keep it under 150 words.
     """
     
-    # 1. Primary Strategy: Try Gemini
     try:
         response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         print("✅ Meta Caption generated successfully with Gemini!")
@@ -204,7 +227,6 @@ def generate_meta_caption(metadata):
     except Exception as e:
         print(f"❌ Gemini API Error for caption: {e}")
         
-        # 2. Fallback Strategy: OpenRouter
         if OPENROUTER_KEY:
             print("🔄 Falling back to OpenRouter for caption generation...")
             try:
@@ -216,17 +238,16 @@ def generate_meta_caption(metadata):
                     "model": "meta-llama/llama-3.3-70b-instruct:free",
                     "messages": [{"role": "user", "content": prompt}]
                 }
-                r = requests.post("[https://openrouter.ai/api/v1/chat/completions](https://openrouter.ai/api/v1/chat/completions)", headers=headers, json=payload)
+                r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
                 if r.status_code == 200:
                     caption = r.json()['choices'][0]['message']['content'].strip()
-                    caption = caption.strip('"') # Remove quotes if added
+                    caption = caption.strip('"') 
                     print("✅ Meta Caption generated successfully with OpenRouter!")
                     return caption
             except Exception as or_e:
                 print(f"❌ OpenRouter API Error for caption: {or_e}")
 
-        # 3. Ultimate Fallback (Safety net so the upload doesn't fail)
-        return f"{metadata['title']}\n\nWhat do you think happened? Let us know below! 👇\n\n#TrueCrime #Mystery #Shorts #Unsolved"
+        return f"{metadata['title']}\n\nWhat do you think happened? Let us know below! 👇\n\n#Mystery #Shorts #Unsolved #Creepy"
 
 # ================== SFX ================== #
 
@@ -249,7 +270,7 @@ def add_sfx(audio_clip, text):
 
 def get_visual_clip(keyword, filename, duration):
     headers = {"Authorization": PEXELS_KEY}
-    url = "[https://api.pexels.com/videos/search](https://api.pexels.com/videos/search)"
+    url = "https://api.pexels.com/videos/search"
     
     params = {
         "query": f"{keyword} cinematic dark", 
@@ -335,6 +356,7 @@ def main_pipeline():
         return None, None
         
     print(f"🎬 Title: {script['title']}")
+    print(f"📁 Case Logged: {script.get('case_name', 'Unknown Case')}")
     print(f"🏷️ Tags: {', '.join(script['tags'][:5])}...")
     
     target_voice = script.get("recommended_voice_model", "Charon")
@@ -348,7 +370,6 @@ def main_pipeline():
             style_instruction = line.get("style_instruction", "Serious and highly suspenseful.")
             clean_text = line.get("clean_text", line.get("text", ""))
 
-            # TTS logic handled by neural_voice.py (still uses Gemini internally)
             wav_file = voice_engine.generate_acting_line(
                 acting_text=acting_input, 
                 style_instruction=style_instruction,
@@ -485,27 +506,22 @@ if __name__ == "__main__":
     video_path, metadata = main_pipeline()
     
     if video_path and metadata:
-        # 1. Upload to YouTube
         upload_success = upload_to_youtube(video_path, metadata)
         
         if upload_success:
-            # 2. Save topic to memory bank to prevent repeats
-            save_new_topic(metadata['title'])
+            # Safely get the case_name, fallback to title if the AI formats weirdly
+            case_to_save = metadata.get('case_name', metadata['title'])
+            save_new_topic(case_to_save)
             
-            # 3. Generate Social Media Caption
             meta_caption = generate_meta_caption(metadata)
-            
-            # 4. Upload to Facebook
             meta_upload.upload_to_facebook(video_path, meta_caption)
             
-            # 5. Upload to Instagram
             temp_public_url = meta_upload.get_temp_public_url(video_path)
             if temp_public_url:
                 meta_upload.upload_to_instagram(temp_public_url, meta_caption)
             else:
                 print("⏭️ Skipping Instagram due to temporary host failure.")
         
-        # 6. Delete temp files
         cleanup_files(video_path)
         
     print("🎉 Daily GhostBot execution finished!")
