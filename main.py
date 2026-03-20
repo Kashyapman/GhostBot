@@ -118,9 +118,9 @@ Do not invent a fake story; use a real, documented case, historical event, or wi
 
 {avoid_instruction}
 
-STRICT STORYTELLING RULES:
-1. THE HOOK (0-3s): First line MUST drop a massive, shocking fact immediately without context to create a curiosity gap.
-2. THE ESCALATION: Every line must raise the stakes. No boring background info.
+STRICT STORYTELLING & VIRAL RULES:
+1. THE HOOK (0-3s): First line MUST drop a massive, shocking fact immediately. No background info.
+2. OPEN LOOPS: Ask a compelling question early on, but delay the answer until the very end to force watch-time.
 3. THE LOOP: The script MUST end abruptly on a cliffhanger that grammatically flows perfectly back into the first line of the video.
 4. SSML MICRO-DIRECTION: Engineer the `acting_text` using strict SSML tags.
    - Use <prosody rate="slow" pitch="-2st" volume="soft"> for creepy lines.
@@ -128,17 +128,19 @@ STRICT STORYTELLING RULES:
    - Use <break time="800ms"/> for dramatic pauses.
 5. CASTING: Choose ONE specific voice model: "Charon" (gritty male), "Fenrir" (intense male), "Aoede" (haunting female), or "Kore" (unsettling female).
 6. VISUAL KEYWORDS: Invent highly specific visual keywords for EVERY line to ensure high-quality B-roll fetching.
-7. YOUTUBE SEO:
-   - title: Must be under 50 characters, use a "Curiosity Gap", and end with #shorts #mystery.
-   - case_name: Provide the actual historical name of the event/case so we can log it (e.g. "The Wow! Signal" or "The Disappearance of Lars Mittank").
-   - description: Start with a chilling question to drive comments, followed by 3 lines of high-volume SEO keywords.
-   - tags: Provide exactly 15 highly searched tags related to the specific case and the broader mystery genre.
+7. YOUTUBE SEO (ENGAGEMENT DRIVER):
+   - title: Under 50 chars, Curiosity Gap, ends with #shorts #mystery.
+   - case_name: Provide the actual historical name of the event/case to log it.
+   - description: 3 lines of high-volume SEO keywords.
+   - pinned_comment: Write a provocative, engaging question related to the case that the channel owner will pin to drive massive comments.
+   - tags: Exactly 15 highly searched tags (mix of broad and long-tail).
 
 Return ONLY valid JSON in this format:
 {{
   "title": "They found WHAT in the walls? #shorts #mystery",
   "case_name": "The Discovery of the Somerton Man",
-  "description": "What would you do if you found this? Tell us below.\\n\\nUnsolved mysteries, scary stories, true crime documentary...",
+  "description": "Unsolved mysteries, scary stories, true crime documentary, bizarre historical events...",
+  "pinned_comment": "If you found that note in your pocket, what would be your first move? Let me know 👇",
   "tags": ["mystery", "shorts", "unsolved", "scary", "glitch", "creepy"],
   "recommended_voice_model": "Charon",
   "lines": [
@@ -292,6 +294,9 @@ def get_visual_clip(keyword, filename, duration):
                 f.write(requests.get(link).content)
 
             clip = VideoFileClip(filename)
+            # CRITICAL FIX: Strip Pexels raw audio to prevent bleed-through over TTS
+            clip = clip.without_audio()
+            
             if clip.duration < duration:
                 loops = int(np.ceil(duration / clip.duration)) + 1
                 clip = clip.loop(n=loops)
@@ -331,7 +336,7 @@ def add_dynamic_subtitles(video_clip, audio_path):
                     font='Impact',
                     method='caption',
                     size=(video_clip.w * 0.9, None)
-                ).set_start(word.start).set_end(word.end).set_position(('center', video_clip.h * 0.65))
+                ).set_start(word.start).set_end(word.end).set_position(('center', video_clip.h * 0.70)) # Adjusted to UI Safe Zone
                 
                 subtitle_clips.append(txt_clip)
             except Exception as e:
@@ -413,6 +418,7 @@ def main_pipeline():
         os.remove(temp_voice_track)
 
     try:
+        # Puts watermark slightly lower to avoid overlapping with top-screen interactions
         watermark = TextClip(
             CHANNEL_HANDLE, 
             fontsize=40, 
@@ -420,7 +426,7 @@ def main_pipeline():
             font='Impact', 
             stroke_color='black', 
             stroke_width=2
-        ).set_opacity(0.4).set_position(('center', 150)).set_duration(final_video.duration)
+        ).set_opacity(0.4).set_position(('center', 200)).set_duration(final_video.duration)
         final_video = CompositeVideoClip([final_video, watermark])
     except Exception as e:
         print(f"⚠️ Could not add watermark: {e}")
@@ -459,12 +465,15 @@ def upload_to_youtube(file_path, metadata):
         creds = Credentials.from_authorized_user_info(json.loads(YOUTUBE_TOKEN_VAL))
         youtube = build("youtube", "v3", credentials=creds)
         
+        # Combine base description with the auto-generated pinned comment hook
+        full_description = f"{metadata['description']}\n\n{metadata.get('pinned_comment', '')}"
+
         youtube.videos().insert(
             part="snippet,status",
             body={
                 "snippet": {
                     "title": metadata["title"],
-                    "description": metadata["description"],
+                    "description": full_description,
                     "tags": metadata["tags"],
                     "categoryId": "24"
                 },
@@ -476,6 +485,10 @@ def upload_to_youtube(file_path, metadata):
             media_body=MediaFileUpload(file_path, chunksize=-1, resumable=True)
         ).execute()
         print("✅ YouTube Upload Successful")
+        
+        # NOTE: Automatically pinning comments via API requires advanced scopes and multi-step requests.
+        # Placing the "comment hook" inside the description achieves a similar viewer-prompting effect.
+        
         return True
     except Exception as e:
         print(f"❌ YouTube Upload failed: {e}")
