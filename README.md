@@ -21,6 +21,40 @@ GhostBot is a fully automated, end-to-end video generation and multi-platform pu
 ## ⚙️ The Automation Engine (How It Works)
 GhostBot is designed to be a "set-and-forget" system. Instead of relying on local hardware, the entire pipeline is orchestrated in the cloud.
 
+### 🏗️ System Architecture Pipeline
+
+```mermaid
+graph TD
+    A[GitHub Actions / Cron] -->|Triggers| B(main.py)
+    
+    subgraph State Management
+    C[(topics.txt)] -.->|Checks memory| B
+    D[(long_form_queue.txt)] -.->|Fetches topic| B
+    end
+
+    subgraph AI Generation Engine
+    B -->|Prompt| E{Gemini / OpenRouter}
+    E -->|Returns Script| F[neural_voice.py]
+    F -->|SSML + TTS| G((Audio Asset))
+    end
+    
+    subgraph Media Assembly
+    G --> H[Video Renderer]
+    I[music/ & sfx/] --> H
+    J[Pexels/Visuals] --> H
+    H --> K((Final Video.mp4))
+    end
+
+    subgraph Multi-Platform Distribution
+    K --> L[YouTube API Upload]
+    K --> M[meta_upload.py]
+    M --> N[Facebook & Instagram API]
+    end
+    
+    L --> O[Update topics.txt & Commit to Repo]
+    N --> O
+```
+
 <img width="876" height="847" alt="GitHub Actions CI/CD Proof" src="https://github.com/user-attachments/assets/89738b79-ff34-43c7-9b66-9a81a1767a61" />
 *100% cloud-based execution via GitHub Actions. No local servers required.*
 
@@ -44,7 +78,7 @@ To run GhostBot locally or configure it on a new repository, you will need sever
 
 1. Clone the repository:
     ```bash
-    git clone [https://github.com/Kashyapman/GhostBot.git](https://github.com/Kashyapman/GhostBot.git)
+    git clone https://github.com/Kashyapman/GhostBot.git
     cd GhostBot
     ```
 
