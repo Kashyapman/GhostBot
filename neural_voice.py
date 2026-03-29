@@ -1,7 +1,6 @@
 import os
 import wave
 import time
-import torchaudio as ta
 from google import genai
 from google.genai import types
 from pydub import AudioSegment
@@ -9,67 +8,29 @@ from pydub.effects import compress_dynamic_range, normalize
 
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing GhostBot Master-Director Engine...")
+        print("🎚️ Initializing Gemini Master-Director Engine...")
+        
         self.api_key = os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY environment variable not set.")
+            
         self.client = genai.Client(api_key=self.api_key)
 
-        try:
-            # THE FIX: Importing the flagship 1B parameter model, NOT the stripped-down Turbo version
-            from chatterbox.tts import ChatterboxTTS
-            print("🧠 Loading FULL Chatterbox 1B Model on CPU (Prioritizing Quality over Speed)...")
-            self.chatterbox = ChatterboxTTS.from_pretrained(device="cpu")
-        except Exception as e:
-            print(f"⚠️ Chatterbox initialization failed: {e}. Will use Gemini TTS fallback.")
-            self.chatterbox = None
-
     def _podcast_mastering(self, sound):
-        """Applies true crime EQ. Pacing is now controlled naturally by Chatterbox tags."""
+        """Applies true crime EQ. Pacing is controlled strictly by SSML."""
         sound = sound.low_pass_filter(8000) 
         sound = compress_dynamic_range(sound, threshold=-15.0, ratio=5.0, attack=5.0, release=50.0)
         sound = normalize(sound, headroom=0.1)
         
-        # Add a 300ms cinematic pause buffer so the spooky scenes don't rush into each other
+        # Add a 300ms cinematic pause buffer so the scenes don't rush into each other
         silence = AudioSegment.silent(duration=300)
         sound = sound + silence
+        
         return sound
 
     def generate_acting_line(self, acting_text, clean_text, style_instruction, index, voice_name="Charon"):
         filename = f"temp_voice_{index}.wav"
-        print(f"🎙️ Rendering [{voice_name}] | Vibe: {style_instruction}")
-
-        # ==========================================
-        # ATTEMPT 1: FULL CHATTERBOX (Expressive Cloning)
-        # ==========================================
-        if self.chatterbox:
-            try:
-                voice_path = f"voices/{voice_name}.wav"
-                
-                if os.path.exists(voice_path):
-                    wav = self.chatterbox.generate(acting_text, audio_prompt_path=voice_path)
-                else:
-                    print(f"⚠️ Warning: {voice_path} not found. Using default base voice.")
-                    wav = self.chatterbox.generate(acting_text)
-                
-                temp_raw = f"temp_raw_cb_{index}.wav"
-                ta.save(temp_raw, wav, self.chatterbox.sr)
-                
-                sound = AudioSegment.from_file(temp_raw)
-                sound = self._podcast_mastering(sound)
-                sound.export(filename, format="wav")
-                
-                if os.path.exists(temp_raw): 
-                    os.remove(temp_raw)
-                    
-                return filename
-            except Exception as e:
-                print(f"⚠️ Chatterbox failed for line {index}: {e}. Falling back to Gemini TTS.")
-
-        # ==========================================
-        # ATTEMPT 2: GEMINI TTS FALLBACK (Safe)
-        # ==========================================
-        print("🔄 Using Gemini TTS Fallback...")
+        print(f"🎙️ Gemini Rendering [{voice_name}] | Style: {style_instruction}")
 
         config = types.GenerateContentConfig(
             response_modalities=["AUDIO"],
@@ -80,11 +41,20 @@ class VoiceEngine:
             )
         )
 
+        # STRICT PROMPT: Forces Gemini to obey the SSML tags instead of speaking them
         prompt = f"""You are an elite, award-winning voice actor narrating a gritty True Crime documentary. 
 YOUR VOCAL STYLE/EMOTION FOR THIS LINE: "{style_instruction}"
-Read the following text exactly as written:
 
-{clean_text}"""
+CRITICAL ACTING DIRECTION: 
+The script below uses SSML tags (like <break>, <emphasis>, <prosody>). 
+DO NOT speak the tags out loud. Instead, you MUST execute them perfectly as stage directions:
+- When you see <break time="Xs"/>, pause in complete silence for that exact duration.
+- When you see <emphasis level="strong">, hit that word hard with intense emotion.
+- When you see <prosody rate="slow" pitch="low">, slow down and drop your pitch to build suspense.
+
+Bring this terrifying script to life:
+
+{acting_text}"""
 
         models_to_try = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro"]
 
