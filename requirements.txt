@@ -9,5 +9,3 @@ google-auth-oauthlib
 requests
 soundfile
 faster-whisper
-chatterbox-tts
-torchaudio
