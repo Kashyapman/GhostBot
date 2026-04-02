@@ -32,13 +32,13 @@ jobs:
       - name: Install System Dependencies & Fix Permissions
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libsndfile1 sox imagemagick fonts-liberation ghostscript
+          sudo apt-get install -y ffmpeg libsndfile1 sox imagemagick fonts-liberation ghostscript \
+                                  libwebp-dev libjpeg-dev zlib1g-dev libfreetype6-dev
           
           # Loosens ImageMagick security policies to prevent MoviePy text/image generation crashes
           sudo sed -i '/<policy domain="path" rights="none" pattern="@\*"/d' /etc/ImageMagick-6/policy.xml || true
           
           # Prevents Error 13 (Permission denied) when saving dynamic assets
-          # Creates standard directories the script might use for the new visual approach and grants full read/write access.
           mkdir -p assets temp images downloads
           chmod -R 777 assets temp images downloads
 
@@ -48,7 +48,7 @@ jobs:
           pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
           
           # Ensures libraries required for the new dynamic visual effects are explicitly installed
-          pip install google-api-python-client requests Pillow scipy moviepy
+          pip install google-api-python-client requests Pillow scipy moviepy opencv-python-headless imageio[ffmpeg] imageio[pyav]
           
           pip install -r requirements.txt
 
@@ -61,10 +61,18 @@ jobs:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
-          # Added required secrets for fetching historical evidence via Google Custom Search
-          GOOGLE_API_KEY: ${{ secrets.Search_API_KEY }}
+          
+          # Standardized the Google Search API key name
+          SEARCH_API_KEY: ${{ secrets.SEARCH_API_KEY }}
           GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
         run: python main.py
+
+      - name: Debug Visuals (Verify Image Downloads)
+        if: always()
+        run: |
+          echo "=== CHECKING DOWNLOADED/GENERATED IMAGES ==="
+          ls -la assets temp images downloads 2>/dev/null || true
+          file assets/* temp/* images/* downloads/* 2>/dev/null || true
 
       - name: Commit and Push Memory Bank Updates
         if: success()
