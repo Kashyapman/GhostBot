@@ -5,37 +5,35 @@ import json
 import glob
 import requests
 import urllib.parse
+import base64
 import numpy as np
 import PIL.Image
-
 from google import genai
 from google.genai import types
-
 from moviepy.editor import *
 from moviepy.video.fx.all import colorx
 from moviepy.audio.fx.all import audio_loop
 from faster_whisper import WhisperModel
-
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from neural_voice import VoiceEngine
+import meta_upload
 
-import meta_upload  
-
-# ================== CONFIG ================== #
-
+# ================== CONFIG ==================
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
-OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY") 
+OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY")
 PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
-
-# Standardized API Key Name
 SEARCH_API_KEY = os.environ.get("SEARCH_API_KEY")
 GOOGLE_CSE_ID = os.environ.get("GOOGLE_CSE_ID")
+HF_API_KEY = os.environ.get("HF_API_KEY", "")  # Optional
 YOUTUBE_TOKEN_VAL = os.environ.get("YOUTUBE_TOKEN_JSON")
-
-CHANNEL_HANDLE = "@TheGlitchArchive" 
+CHANNEL_HANDLE = "@TheGlitchArchive"
 TOPICS_FILE = "topics.txt"
+
+# Video Settings
+VIDEO_WIDTH = 720
+VIDEO_HEIGHT = 1280
 
 if not hasattr(PIL.Image, "ANTIALIAS"):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
@@ -54,16 +52,14 @@ SFX_MAP = {
     "thud": "thud.mp3"
 }
 
-# ================== ANTI BAN ================== #
-
+# ================== ANTI BAN ==================
 def anti_ban_sleep():
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        sleep_seconds = random.randint(300, 900)
+        sleep_seconds = random.randint(300, 600)
         print(f"🕵️ Anti-Ban Sleep: {sleep_seconds//60} minutes")
         time.sleep(sleep_seconds)
 
-# ================== MEMORY SYSTEM ================== #
-
+# ================== MEMORY SYSTEM ==================
 def get_past_topics():
     if not os.path.exists(TOPICS_FILE):
         return ""
@@ -79,14 +75,13 @@ def save_new_topic(case_name):
     except Exception as e:
         print(f"⚠️ Failed to save topic: {e}")
 
-# ================== SCRIPT & SEO GENERATION ================== #
-
+# ================== SCRIPT & SEO GENERATION ==================
 def generate_viral_script():
     print("🧠 Generating Master-Directed Dual Script (Audio + Visuals)...")
-
     client = genai.Client(api_key=GEMINI_KEY)
-    models_to_try = ["models/gemini-2.5-pro", "models/gemini-2.5-flash"]
     
+    models_to_try = ["models/gemini-2.5-flash"]
+
     content_pool = [
         "Bizarre Unsolved Disappearances",
         "Impossible Heists and Robberies",
@@ -105,72 +100,69 @@ def generate_viral_script():
         "Mysterious Number Stations from the Cold War",
         "Unsolved Internet Rabbit Holes"
     ]
-    
+
     niche = random.choice(content_pool)
     print(f"🎲 Selected Category for Today: {niche}")
-    
+
     past_topics = get_past_topics()
     avoid_instruction = f"CRITICAL: Do NOT write about these specific historical cases, we have already covered them:\n{past_topics}\n" if past_topics else "No past topics yet."
 
     prompt = f"""
 You are an elite viral YouTube Shorts writer, an Award-Winning Voice Director, AND a Master Visual Editor.
 Your channel is "The Glitch Archive" focusing on dark, eerie, and baffling historical true crime/mysteries.
-
 TODAY'S TOPIC CATEGORY: {niche}
-
-Your task is to write a highly engaging, high-retention short-form script about a highly specific, obscure case or event that fits this category. 
+Your task is to write a highly engaging, high-retention short-form script about a highly specific, obscure case or event that fits this category.
 Do not invent a fake story; use a real, documented case, historical event, or widely reported anomaly.
-
 {avoid_instruction}
 
 STRICT STORYTELLING & VIRAL RULES:
-1. THE HOOK (0-3s): First line MUST drop a bizarre paradox, an impossible fact, or a terrifying anomaly immediately.
-2. NATURAL PACING: Do not restrict yourself to a specific word count. Write an immersive story. Focus on building suspense.
-3. OPEN LOOPS: Ask a compelling question early on, but delay the answer until the very end.
-4. THE PERFECT LOOP: End abruptly on a cliffhanger that grammatically flows perfectly back into the first line.
+THE HOOK (0-3s): First line MUST drop a bizarre paradox, an impossible fact, or a terrifying anomaly immediately.
+NATURAL PACING: Do not restrict yourself to a specific word count. Write an immersive story. Focus on building suspense.
+OPEN LOOPS: Ask a compelling question early on, but delay the answer until the very end.
+THE PERFECT LOOP: End abruptly on a cliffhanger that grammatically flows perfectly back into the first line.
 
 VOICE ACTING & EXPRESSION DIRECTION (CRITICAL FOR REALISM):
-- recommended_voice_model: Choose ONE specific voice model: "Charon" (gritty male), "Fenrir" (intense male), "Aoede" (haunting female), or "Kore" (unsettling female).
-- style_instruction: A short note on the vibe (e.g., "Hushed, terrified whisper.")
-- EXPRESSION TAGS (SSML): You MUST use highly detailed SSML tags inside `acting_text`.
-  - <break time="0.5s"/> to <break time="2.0s"/> for suspenseful pauses.
-  - <emphasis level="strong"> for shocking words.
-  - <prosody rate="slow" pitch="low"> for dark, creeping explanations.
-- Keep the `clean_text` completely free of XML tags.
+recommended_voice_model: Choose ONE specific voice model: "Charon" (gritty male), "Fenrir" (intense male), "Aoede" (haunting female), or "Kore" (unsettling female).
+style_instruction: A short note on the vibe (e.g., "Hushed, terrified whisper.")
+
+EXPRESSION TAGS (SSML): You MUST use highly detailed SSML tags inside `acting_text`.
+<break time="1s"/> for suspenseful pauses.
+<emphasis> for shocking words.
+<prosody rate="slow" pitch="-10%"> for dark, creeping explanations.
+Keep the `clean_text` completely free of XML tags.
 
 VISUAL DIRECTOR INSTRUCTIONS (CRITICAL FOR RETENTION):
-Shorts require a visual change every 2.5 to 4 seconds. For EVERY line of dialogue, you MUST provide an array of 2 to 3 `visuals`. 
+Shorts require a visual change every 2.5 to 4 seconds. For EVERY line of dialogue, you MUST provide an array of 1 to 2 `visuals`.
 You must choose between REAL EVIDENCE or AI GENERATION for each visual:
-- RULE A (REAL EVIDENCE): If referencing a real artifact, person, or document, write a highly specific Google Image query. (e.g., "Somerton Man 1948 unedited crime scene photo" or "Nampa Image doll 1889 close up").
-- RULE B (AI GENERATION): If the scene was never photographed or impossible to find, you MUST start the keyword with "AI_GEN: " followed by a descriptive prompt. (e.g., "AI_GEN: A dark, muddy tunnel deep underground with a cracked stone figure").
+RULE A (REAL EVIDENCE): If referencing a real artifact, person, or document, write a highly specific Google Image query. (e.g., "Somerton Man 1948 unedited crime scene photo" or "Nampa Image doll 1889 close up").
+RULE B (AI GENERATION): If the scene was never photographed or impossible to find, you MUST start the keyword with "AI_GEN: " followed by a descriptive prompt. (e.g., "AI_GEN: A dark, muddy tunnel deep underground with a cracked stone figure").
 
 YOUTUBE SEO:
-- title: Write a highly engaging title. End with #shorts #mystery.
-- case_name: Provide the actual historical name of the event/case to log it.
-- description: 3 lines of high-volume SEO keywords.
-- pinned_comment: Write a provocative, engaging question related to the case.
-- tags: Exactly 15 highly searched tags.
+title: Write a highly engaging title. End with #shorts #mystery.
+case_name: Provide the actual historical name of the event/case to log it.
+description: 3 lines of high-volume SEO keywords.
+pinned_comment: Write a provocative, engaging question related to the case.
+tags: Exactly 15 highly searched tags.
 
 Return ONLY valid JSON in this format:
 {{
-  "title": "They found WHAT in the walls? #shorts #mystery",
-  "case_name": "The Discovery of the Somerton Man",
-  "description": "Unsolved mysteries, scary stories, true crime documentary...",
-  "pinned_comment": "If you found that note in your pocket, what would be your first move? Let me know 👇",
-  "tags": ["mystery", "shorts", "unsolved", "scary", "glitch", "creepy"],
-  "recommended_voice_model": "Charon",
-  "lines": [
-    {{
-      "style_instruction": "Hushed, terrified whisper as if telling a dangerous secret.",
-      "acting_text": "<prosody rate='slow' pitch='low'>He walked into the room...</prosody> <break time='1.5s'/> and <emphasis level='strong'>vanished</emphasis>.",
-      "clean_text": "He walked into the room and vanished.",
-      "visuals": [
-        "AI_GEN: Shadowy silhouette of a man walking into a pitch black 1950s hotel room",
-        "Somerton Man hotel room 1948 crime scene photo",
-        "AI_GEN: Dusty footprints disappearing into thin air on a worn carpet"
-      ]
-    }}
-  ]
+    "title": "They found WHAT in the walls? #shorts #mystery",
+    "case_name": "The Discovery of the Somerton Man",
+    "description": "Unsolved mysteries, scary stories, true crime documentary...",
+    "pinned_comment": "If you found that note in your pocket, what would be your first move? Let me know 👇",
+    "tags": ["mystery", "shorts", "unsolved", "scary", "glitch", "creepy"],
+    "recommended_voice_model": "Charon",
+    "lines": [
+        {{
+            "style_instruction": "Hushed, terrified whisper as if telling a dangerous secret.",
+            "acting_text": "He walked into the room... <break time='1.5s'/> and <emphasis>vanished</emphasis>.",
+            "clean_text": "He walked into the room and vanished.",
+            "visuals": [
+                "AI_GEN: Shadowy silhouette of a man walking into a pitch black 1950s hotel room",
+                "Somerton Man hotel room 1948 crime scene photo"
+            ]
+        }}
+    ]
 }}
 """
 
@@ -208,7 +200,7 @@ Return ONLY valid JSON in this format:
                 "messages": [{"role": "user", "content": prompt}]
             }
             
-            r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
+            r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
             
             if r.status_code == 200:
                 response_content = r.json()['choices'][0]['message']['content']
@@ -228,22 +220,21 @@ Return ONLY valid JSON in this format:
 def generate_meta_caption(metadata):
     print("🤖 Generating optimized Meta caption...")
     client = genai.Client(api_key=GEMINI_KEY)
-    
     prompt = f"""
-    Write a highly engaging, suspenseful caption for a Facebook Reel and Instagram Reel about this mystery video:
-    Video Title: {metadata['title']}
-    Video Description: {metadata['description']}
+Write a highly engaging, suspenseful caption for a Facebook Reel and Instagram Reel about this mystery video:
+Video Title: {metadata['title']}
+Video Description: {metadata['description']}
 
-    RULES:
-    - The tone should be captivating and mysterious.
-    - Include a call to action asking viewers to comment their thoughts.
-    - Include 5-7 highly relevant, trending hashtags (e.g. #Mystery #Unsolved #Glitch).
-    - Do not use any quotation marks around the final output.
-    - Keep it under 150 words.
-    """
-    
+RULES:
+- The tone should be captivating and mysterious.
+- Include a call to action asking viewers to comment their thoughts.
+- Include 5-7 highly relevant, trending hash tags (e.g. #Mystery #Unsolved #Glitch).
+- Do not use any quotation marks around the final output.
+- Keep it under 150 words.
+"""
+
     try:
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt, timeout=30)
         print("✅ Meta Caption generated successfully with Gemini!")
         return response.text.strip()
     except Exception as e:
@@ -260,7 +251,7 @@ def generate_meta_caption(metadata):
                     "model": "meta-llama/llama-3.3-70b-instruct:free",
                     "messages": [{"role": "user", "content": prompt}]
                 }
-                r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
+                r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
                 if r.status_code == 200:
                     caption = r.json()['choices'][0]['message']['content'].strip()
                     caption = caption.strip('"') 
@@ -269,10 +260,9 @@ def generate_meta_caption(metadata):
             except Exception as or_e:
                 print(f"❌ OpenRouter API Error for caption: {or_e}")
 
-        return f"{metadata['title']}\n\nWhat do you think happened? Let us know below! 👇\n\n#Mystery #Shorts #Unsolved #Creepy"
+    return f"{metadata['title']}\n\nWhat do you think happened? Let us know below! 👇\n\n#Mystery #Shorts #Unsolved #Creepy"
 
-# ================== SFX ================== #
-
+# ================== SFX ==================
 def add_sfx(audio_clip, text):
     text_lower = text.lower()
     for k, v in SFX_MAP.items():
@@ -280,7 +270,7 @@ def add_sfx(audio_clip, text):
             path = os.path.join("sfx", v)
             if os.path.exists(path):
                 try:
-                    sfx = AudioFileClip(path).volumex(0.20) 
+                    sfx = AudioFileClip(path).volumex(0.20)
                     if sfx.duration > audio_clip.duration:
                         sfx = sfx.subclip(0, audio_clip.duration)
                     return CompositeAudioClip([audio_clip, sfx])
@@ -288,17 +278,15 @@ def add_sfx(audio_clip, text):
                     pass
     return audio_clip
 
-# ================== DYNAMIC VISUAL FETCH ================== #
+# ================== DYNAMIC VISUAL FETCH (6-LAYER FALLBACK) ==================
 
 def fetch_ai_image(prompt, filename):
-    """Generates an image using SOTA FLUX.1 via Pollinations.ai"""
+    """Layer 2: Pollinations.ai - FLUX.1"""
     full_prompt = f"{prompt}, highly detailed, photorealistic, dark cinematic lighting, eerie true crime documentary style, 8k resolution"
     encoded_prompt = urllib.parse.quote(full_prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true"
-    
-    # User-Agent to prevent 403 blocks from Pollinations
+    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={VIDEO_WIDTH}&height={VIDEO_HEIGHT}&nologo=true"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-    
+
     try:
         r = requests.get(url, headers=headers, timeout=30)
         if r.status_code == 200:
@@ -306,95 +294,355 @@ def fetch_ai_image(prompt, filename):
                 f.write(r.content)
             return True
     except Exception as e:
-        print(f"⚠️ Error fetching AI image: {e}")
+        print(f"⚠️ Pollinations.ai error: {e}")
     return False
 
-def verify_and_convert_image(filename):
-    """Prevents MoviePy crashes by ensuring the file is a valid RGB JPEG (Fixes WebP/RGBA bugs)"""
+def fetch_puter_image(prompt, filename):
+    """Layer 3: Puter.js - FREE UNLIMITED SOTA Models"""
+    print(f"🌐 [3/6] Puter.js (FREE UNLIMITED - FLUX/Imagen4): {prompt[:40]}...")
+    
+    url = "https://api.puter.com/ai/img/generate"
+    
+    payload = {
+        "model": "flux",
+        "prompt": f"{prompt}, photorealistic, dark cinematic lighting, true crime documentary style, highly detailed, 8k, vertical",
+        "n": 1,
+        "size": f"{VIDEO_WIDTH}x{VIDEO_HEIGHT}"
+    }
+    
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+    
     try:
-        # Step 1: Verify it is actually an image and not an HTML error page
+        response = requests.post(url, json=payload, headers=headers, timeout=45)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'images' in data and len(data['images']) > 0:
+                img_data = base64.b64decode(data['images'][0])
+                
+                with open(filename, "wb") as f:
+                    f.write(img_data)
+                
+                if os.path.getsize(filename) > 1000:
+                    print("✅ Puter.js image generated successfully!")
+                    return True
+        
+        print(f"⚠️ Puter.js returned: {response.status_code}")
+        return False
+        
+    except Exception as e:
+        print(f"⚠️ Puter.js error: {e}")
+        return False
+
+def fetch_ai_horde_image(prompt, filename):
+    """Layer 4: AI Horde - FREE Community-Powered"""
+    print(f"👥 [4/6] AI Horde (FREE - SDXL/Stable Cascade): {prompt[:40]}...")
+    
+    url = "https://stablehorde.net/api/v2/generate/async"
+    
+    headers = {
+        "apikey": "0000000000",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Client-Agent": "GhostBot:1.0.0"
+    }
+    
+    payload = {
+        "prompt": f"{prompt}, photorealistic, dark cinematic, true crime, highly detailed, 8k",
+        "params": {
+            "steps": 25,
+            "width": VIDEO_WIDTH,
+            "height": VIDEO_HEIGHT,
+            "sampler_name": "DPM++ 2M Karras",
+            "cfg_scale": 7.5,
+            "denoising_strength": 0.75
+        },
+        "models": ["SDXL 1.0"],
+        "nsfw": False,
+        "censor_nsfw": False
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        
+        if response.status_code != 202:
+            print(f"⚠️ AI Horde request failed: {response.status_code}")
+            return False
+        
+        job_data = response.json()
+        job_id = job_data.get('id')
+        
+        if not job_id:
+            print("⚠️ No job ID returned from AI Horde")
+            return False
+        
+        print(f"⏳ AI Horde job submitted (ID: {job_id}). Waiting...")
+        
+        for attempt in range(30):
+            time.sleep(3)
+            
+            check_url = f"https://stablehorde.net/api/v2/generate/check/{job_id}"
+            check_response = requests.get(check_url, headers=headers, timeout=15)
+            
+            if check_response.status_code == 200:
+                status = check_response.json()
+                
+                if status.get('done', False):
+                    print("✅ AI Horde generation complete! Fetching image...")
+                    
+                    result_url = f"https://stablehorde.net/api/v2/generate/status/{job_id}"
+                    result_response = requests.get(result_url, headers=headers, timeout=15)
+                    
+                    if result_response.status_code == 200:
+                        result_data = result_response.json()
+                        
+                        if 'generations' in result_data and len(result_data['generations']) > 0:
+                            img_url = result_data['generations'][0]['img']
+                            
+                            img_response = requests.get(img_url, timeout=20)
+                            
+                            if img_response.status_code == 200:
+                                with open(filename, "wb") as f:
+                                    f.write(img_response.content)
+                                
+                                if os.path.getsize(filename) > 1000:
+                                    print(f"✅ AI Horde image downloaded successfully!")
+                                    return True
+        
+        print("⏱️ AI Horde generation timed out")
+        return False
+        
+    except Exception as e:
+        print(f"⚠️ AI Horde error: {e}")
+        return False
+
+def fetch_huggingface_image(prompt, filename):
+    """Layer 5: Hugging Face Inference API"""
+    print(f"🤗 [5/6] Hugging Face (FLUX/SDXL): {prompt[:40]}...")
+    
+    models_to_try = [
+        "black-forest-labs/FLUX.1-dev",
+        "stabilityai/stable-diffusion-xl-base-1.0"
+    ]
+    
+    for model_id in models_to_try:
+        try:
+            url = f"https://api-inference.huggingface.co/models/{model_id}"
+            
+            headers = {
+                "Authorization": f"Bearer {HF_API_KEY}" if HF_API_KEY else "",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "inputs": f"{prompt}, photorealistic, dark cinematic lighting, true crime documentary style, highly detailed, 8k, vertical",
+                "parameters": {
+                    "width": VIDEO_WIDTH,
+                    "height": VIDEO_HEIGHT,
+                    "num_inference_steps": 25
+                }
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            
+            if response.status_code == 200:
+                with open(filename, "wb") as f:
+                    f.write(response.content)
+                
+                if os.path.getsize(filename) > 1000:
+                    print(f"✅ Hugging Face image generated with {model_id}!")
+                    return True
+            elif response.status_code == 503:
+                print(f"⚠️ Model {model_id} is loading, trying next model...")
+                continue
+            else:
+                print(f"⚠️ HF API {model_id} returned: {response.status_code}")
+                
+        except Exception as e:
+            print(f"⚠️ Hugging Face error with {model_id}: {e}")
+            continue
+    
+    return False
+
+def fetch_placeholder_image(keyword, filename):
+    """Layer 6: Emergency Placeholder (Guaranteed to work)"""
+    print(f"🚨 [6/6] EMERGENCY: Creating placeholder image...")
+    
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        
+        img = Image.new('RGB', (VIDEO_WIDTH, VIDEO_HEIGHT), color=(10, 10, 20))
+        draw = ImageDraw.Draw(img)
+        
+        for y in range(VIDEO_HEIGHT):
+            r = int(10 + (y / VIDEO_HEIGHT) * 20)
+            g = int(10 + (y / VIDEO_HEIGHT) * 20)
+            b = int(20 + (y / VIDEO_HEIGHT) * 40)
+            draw.line([(0, y), (VIDEO_WIDTH, y)], fill=(r, g, b))
+        
+        words = keyword.replace("AI_GEN:", "").replace("real historical photo", "").strip()[:60]
+        
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/msttcorefonts/Impact.ttf", 48)
+            small_font = ImageFont.truetype("/usr/share/fonts/truetype/msttcorefonts/Arial.ttf", 32)
+        except:
+            font = ImageFont.load_default()
+            small_font = font
+        
+        draw.text((VIDEO_WIDTH//2, VIDEO_HEIGHT//2 - 50), "MYSTERY", fill=(255, 215, 0), font=font, anchor="mm")
+        draw.text((VIDEO_WIDTH//2, VIDEO_HEIGHT//2 + 50), words, fill=(200, 200, 200), font=small_font, anchor="mm")
+        draw.text((VIDEO_WIDTH//2, VIDEO_HEIGHT//2 + 150), "⚫ ◼️ ", fill=(100, 100, 100), font=font, anchor="mm")
+        
+        img.save(filename, "JPEG", quality=95)
+        print("✅ Placeholder image created!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Placeholder creation failed: {e}")
+        return False
+
+def verify_and_convert_image(filename):
+    """Validates and converts images to RGB JPEG"""
+    try:
         with PIL.Image.open(filename) as img:
             img.verify()
         
-        # Step 2: Convert transparent/WebP formats to standard RGB for MoviePy compatibility
         with PIL.Image.open(filename) as img:
-            if img.mode in ('RGBA', 'P', 'LA'):
+            if img.mode in ('RGBA', 'P', 'LA', 'L'):
                 img = img.convert('RGB')
-            img.save(filename, format='JPEG')
+            img.save(filename, format='JPEG', quality=95)
         return True
     except Exception as e:
-        print(f"⚠️ Invalid or corrupted image {filename}: {e}")
+        print(f"⚠️ Image verification failed: {e}")
         return False
 
 def get_image_clip(keyword, duration, index):
-    """Fetches real historical images or SOTA AI images and applies Alternating Ken Burns."""
+    """Fetches images with 6 layers of fallback to prevent black screens."""
     img_filename = f"temp_img_{index}.jpg"
     success = False
     
-    if keyword.startswith("AI_GEN:"):
-        clean_prompt = keyword.replace("AI_GEN:", "").strip()
-        print(f"🪄 Generating SOTA AI Image: {clean_prompt[:40]}...")
-        success = fetch_ai_image(clean_prompt, img_filename)
-        
-    else:
-        print(f"🔍 Searching Google for Evidence: {keyword}")
-        if SEARCH_API_KEY and GOOGLE_CSE_ID:
-            url = "https://www.googleapis.com/customsearch/v1"
-            params = {
-                "q": f"{keyword} real historical photo evidence", 
-                "cx": GOOGLE_CSE_ID, "key": SEARCH_API_KEY,
-                "searchType": "image", "num": 1, "safe": "active"
-            }
-            try:
-                r = requests.get(url, params=params).json()
-                if "items" in r:
-                    img_url = r["items"][0]["link"]
-                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-                    img_data = requests.get(img_url, headers=headers, timeout=15).content
-                    with open(img_filename, "wb") as f:
-                        f.write(img_data)
-                    success = True
-                else:
-                    print("⚠️ No Google results found. Falling back to AI Image...")
-            except Exception as e:
-                print(f"⚠️ Google API error: {e}")
-        
-        if not success:
-            success = fetch_ai_image(keyword, img_filename)
-
-    # Validate image integrity before passing to MoviePy
-    if not success or not os.path.exists(img_filename) or not verify_and_convert_image(img_filename):
-        print(f"⚠️ Image generation failed entirely. Using Black fallback for index {index}")
-        return ColorClip(size=(1080, 1920), color=(15, 15, 15), duration=duration)
-
     try:
-        clip = ImageClip(img_filename).set_duration(duration)
+        # === LAYER 1: Google Custom Search ===
+        if not keyword.startswith("AI_GEN:"):
+            print(f"🔍 [1/6] Searching Google for: {keyword[:50]}...")
+            if SEARCH_API_KEY and GOOGLE_CSE_ID:
+                url = "https://www.googleapis.com/customsearch/v1"
+                params = {
+                    "q": f"{keyword} real historical photo evidence",
+                    "cx": GOOGLE_CSE_ID,
+                    "key": SEARCH_API_KEY,
+                    "searchType": "image",
+                    "num": 1,
+                    "safe": "active"
+                }
+                
+                try:
+                    r = requests.get(url, params=params, timeout=15,
+                                   headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+                    r.raise_for_status()
+                    data = r.json()
+                    
+                    if "items" in data and len(data["items"]) > 0:
+                        img_url = data["items"][0]["link"]
+                        print(f"📥 Downloading from Google: {img_url[:60]}...")
+                        
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
+                        }
+                        img_data = requests.get(img_url, headers=headers, timeout=20).content
+                        
+                        with open(img_filename, "wb") as f:
+                            f.write(img_data)
+                        
+                        if os.path.exists(img_filename) and os.path.getsize(img_filename) > 1000:
+                            success = True
+                            print(f"✅ Google image downloaded ({os.path.getsize(img_filename)} bytes)")
+                    
+                except requests.exceptions.Timeout:
+                    print("⏱️ Google API timed out")
+                except Exception as e:
+                    print(f"⚠️ Google API error: {e}")
         
-        clip = clip.resize(height=1920)
-        if clip.w < 1080: clip = clip.resize(width=1080)
-        clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=1080, height=1920)
+        # === LAYER 2: Pollinations.ai ===
+        if not success:
+            clean_prompt = keyword.replace("AI_GEN:", "").strip() if keyword.startswith("AI_GEN:") else keyword
+            print(f"🪄 [2/6] Pollinations.ai (FLUX.1): {clean_prompt[:40]}...")
+            success = fetch_ai_image(clean_prompt, img_filename)
         
-        if index % 2 == 0:
-            zoom_func = lambda t: 1 + 0.05 * (t / duration)
-        else:
-            zoom_func = lambda t: 1.05 - 0.05 * (t / duration)
+        # === LAYER 3: Puter.js ===
+        if not success:
+            clean_prompt = keyword.replace("AI_GEN:", "").strip() if keyword.startswith("AI_GEN:") else keyword
+            success = fetch_puter_image(clean_prompt, img_filename)
+        
+        # === LAYER 4: AI Horde ===
+        if not success:
+            clean_prompt = keyword.replace("AI_GEN:", "").strip() if keyword.startswith("AI_GEN:") else keyword
+            success = fetch_ai_horde_image(clean_prompt, img_filename)
+        
+        # === LAYER 5: Hugging Face ===
+        if not success:
+            clean_prompt = keyword.replace("AI_GEN:", "").strip() if keyword.startswith("AI_GEN:") else keyword
+            success = fetch_huggingface_image(clean_prompt, img_filename)
+        
+        # === LAYER 6: Emergency Placeholder ===
+        if not success:
+            print(f"🚨 [6/6] EMERGENCY: Creating placeholder image...")
+            success = fetch_placeholder_image(keyword, img_filename)
+        
+        # === VALIDATE & CONVERT ===
+        if success and os.path.exists(img_filename):
+            file_size = os.path.getsize(img_filename)
+            print(f"📊 Image file size: {file_size} bytes")
             
-        clip = clip.resize(zoom_func)
-        clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=1080, height=1920)
-        return clip
+            if file_size < 500:
+                print("⚠️ Image file too small, attempting conversion...")
+                success = False
+            
+            try:
+                verify_and_convert_image(img_filename)
+            except Exception as e:
+                print(f"⚠️ Image conversion issue: {e}")
+
+        # === CREATE VIDEO CLIP ===
+        try:
+            clip = ImageClip(img_filename).set_duration(duration)
+            
+            clip = clip.resize(height=VIDEO_HEIGHT)
+            if clip.w < VIDEO_WIDTH:
+                clip = clip.resize(width=VIDEO_WIDTH)
+            
+            clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=VIDEO_WIDTH, height=VIDEO_HEIGHT)
+            
+            if index % 2 == 0:
+                zoom_func = lambda t: 1 + 0.05 * (t / duration)
+            else:
+                zoom_func = lambda t: 1.05 - 0.05 * (t / duration)
+                
+            clip = clip.resize(zoom_func)
+            clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=VIDEO_WIDTH, height=VIDEO_HEIGHT)
+            
+            print(f"✅ Clip {index} created successfully!")
+            return clip
+            
+        except Exception as e:
+            print(f"⚠️ MoviePy clip error: {e}")
+            return ColorClip(size=(VIDEO_WIDTH, VIDEO_HEIGHT), color=(20, 20, 35), duration=duration)
+            
     except Exception as e:
-        print(f"⚠️ MoviePy Clip Generation Error: {e}")
-        return ColorClip(size=(1080, 1920), color=(15, 15, 15), duration=duration)
+        print(f"❌ Critical error in get_image_clip: {e}")
+        return ColorClip(size=(VIDEO_WIDTH, VIDEO_HEIGHT), color=(20, 20, 35), duration=duration)
 
-# ================== SUBTITLES ================== #
-
+# ================== SUBTITLES ==================
 def add_dynamic_subtitles(video_clip, audio_path):
     print("📝 Transcribing audio for word-level subtitles...")
-    model = WhisperModel("base", device="cpu", compute_type="int8")
+    model = WhisperModel("tiny", device="cpu", compute_type="int8")
     segments, _ = model.transcribe(audio_path, word_timestamps=True)
-
     subtitle_clips = []
-    
+
     for segment in segments:
         for word in segment.words:
             clean_word = word.word.strip().upper()
@@ -404,10 +652,10 @@ def add_dynamic_subtitles(video_clip, audio_path):
             try:
                 txt_clip = TextClip(
                     clean_word,
-                    fontsize=90,
+                    fontsize=70,
                     color='yellow',
                     stroke_color='black',
-                    stroke_width=3,
+                    stroke_width=2,
                     font='Impact',
                     method='caption',
                     size=(video_clip.w * 0.9, None)
@@ -420,11 +668,9 @@ def add_dynamic_subtitles(video_clip, audio_path):
     print(f"✅ Generated {len(subtitle_clips)} word captions!")
     return CompositeVideoClip([video_clip] + subtitle_clips)
 
-# ================== MAIN PIPELINE ================== #
-
+# ================== MAIN PIPELINE ==================
 def main_pipeline():
     anti_ban_sleep()
-
     try:
         voice_engine = VoiceEngine()
     except Exception as e:
@@ -438,10 +684,10 @@ def main_pipeline():
     print(f"🎬 Title: {script['title']}")
     print(f"📁 Case Logged: {script.get('case_name', 'Unknown Case')}")
     print(f"🏷️ Tags: {', '.join(script['tags'][:5])}...")
-    
+
     target_voice = script.get("recommended_voice_model", "Charon")
     print(f"🎙️ AI Casted Narrator: {target_voice}")
-    
+
     final_clips = []
     global_img_index = 0
 
@@ -454,10 +700,10 @@ def main_pipeline():
             visuals_list = line.get("visuals", ["AI_GEN: dark cinematic eerie background"])
 
             wav_file = voice_engine.generate_acting_line(
-                acting_text=acting_input, 
-                clean_text=clean_text, 
+                acting_text=acting_input,
+                clean_text=clean_text,
                 style_instruction=style_instruction,
-                index=i, 
+                index=i,
                 voice_name=target_voice
             )
 
@@ -507,20 +753,20 @@ def main_pipeline():
 
     try:
         watermark = TextClip(
-            CHANNEL_HANDLE, 
-            fontsize=40, 
-            color='white', 
-            font='Impact', 
-            stroke_color='black', 
+            CHANNEL_HANDLE,
+            fontsize=30,
+            color='white',
+            font='Impact',
+            stroke_color='black',
             stroke_width=2
-        ).set_opacity(0.4).set_position(('center', 200)).set_duration(final_video.duration)
+        ).set_opacity(0.4).set_position(('center', 150)).set_duration(final_video.duration)
         final_video = CompositeVideoClip([final_video, watermark])
     except Exception as e:
         print(f"⚠️ Could not add watermark: {e}")
 
     print("🎵 Adding Background Music...")
     music_files = glob.glob("music/track*.mp3")
-    
+
     if music_files:
         chosen_track = random.choice(music_files)
         try:
@@ -536,14 +782,14 @@ def main_pipeline():
         output_file,
         codec="libx264",
         audio_codec="aac",
-        fps=30,
+        fps=24,
         preset="fast",
-        threads=4 
+        threads=2,
+        logger=None
     )
     return output_file, script
 
-# ================== YOUTUBE UPLOAD ================== #
-
+# ================== YOUTUBE UPLOAD ==================
 def upload_to_youtube(file_path, metadata):
     if not file_path:
         return False
@@ -551,7 +797,6 @@ def upload_to_youtube(file_path, metadata):
     try:
         creds = Credentials.from_authorized_user_info(json.loads(YOUTUBE_TOKEN_VAL))
         youtube = build("youtube", "v3", credentials=creds)
-        
         full_description = f"{metadata['description']}\n\n{metadata.get('pinned_comment', '')}"
 
         youtube.videos().insert(
@@ -571,39 +816,31 @@ def upload_to_youtube(file_path, metadata):
             media_body=MediaFileUpload(file_path, chunksize=-1, resumable=True)
         ).execute()
         print("✅ YouTube Upload Successful")
-        
         return True
     except Exception as e:
         print(f"❌ YouTube Upload failed: {e}")
         return False
 
-# ================== CLEANUP ================== #
-
+# ================== CLEANUP ==================
 def cleanup_files(final_video):
     print("🧹 Starting cleanup phase...")
     try:
         if final_video and os.path.exists(final_video):
             os.remove(final_video)
             print(f"Deleted {final_video}")
-
         for f in glob.glob("temp_vid_*.mp4"):
             os.remove(f)
-            
         for f in glob.glob("temp_img_*.jpg"):
             os.remove(f)
-            
         for f in glob.glob("temp_*.wav"):
             os.remove(f)
-            
         print("✅ Cleanup complete!")
     except Exception as e:
         print(f"⚠️ Error during cleanup: {e}")
 
-# ================== ENTRY ================== #
-
+# ================== ENTRY ==================
 if __name__ == "__main__":
     video_path, metadata = main_pipeline()
-    
     if video_path and metadata:
         upload_success = upload_to_youtube(video_path, metadata)
         
