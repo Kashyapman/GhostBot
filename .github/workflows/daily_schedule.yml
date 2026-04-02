@@ -2,9 +2,12 @@ name: Daily GhostBot Upload
 
 on:
   schedule:
-    # Runs at 06:00 and 18:00 UTC (approx Morning/Evening)
     - cron: '0 6,18 * * *'
-  workflow_dispatch: # Allows manual trigger button
+  workflow_dispatch:
+
+concurrency:
+  group: ghostbot-upload
+  cancel-in-progress: false 
 
 jobs:
   run_bot:
@@ -16,22 +19,37 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install System Dependencies
+      - name: Install System Dependencies & Fix Permissions
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libsndfile1 sox imagemagick fonts-liberation
-          sudo sed -i 's/<policy domain="path" rights="none" pattern="@\*"//' /etc/ImageMagick-6/policy.xml
+          sudo apt-get install -y ffmpeg libsndfile1 sox imagemagick fonts-liberation ghostscript
+          
+          # Loosens ImageMagick security policies to prevent MoviePy text/image generation crashes
+          sudo sed -i '/<policy domain="path" rights="none" pattern="@\*"/d' /etc/ImageMagick-6/policy.xml || true
+          
+          # Prevents Error 13 (Permission denied) when saving dynamic assets
+          # Creates standard directories the script might use for the new visual approach and grants full read/write access.
+          mkdir -p assets temp images downloads
+          chmod -R 777 assets temp images downloads
 
       - name: Install Python Libraries
         run: |
+          python -m pip install --upgrade pip
           pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          
+          # Ensures libraries required for the new dynamic visual effects are explicitly installed
+          pip install google-api-python-client requests Pillow scipy moviepy
+          
           pip install -r requirements.txt
 
       - name: Run GhostBot
@@ -43,12 +61,22 @@ jobs:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          # Added required secrets for fetching historical evidence via Google Custom Search
+          GOOGLE_API_KEY: ${{ secrets.Search_API_KEY }}
+          GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
         run: python main.py
 
       - name: Commit and Push Memory Bank Updates
+        if: success()
         run: |
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com" 
           git add topics.txt
-          git diff --quiet && git diff --staged --quiet || git commit -m "chore: update topics memory bank [skip ci]"
-          git push
+          
+          if git diff --staged --quiet; then
+            echo "No changes in topics.txt to commit."
+          else
+            git commit -m "chore: update topics memory bank [skip ci]"
+            git pull --rebase origin main || true 
+            git push
+          fi
