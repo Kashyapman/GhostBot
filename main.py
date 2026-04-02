@@ -4,6 +4,7 @@ import time
 import json
 import glob
 import requests
+import urllib.parse
 import numpy as np
 import PIL.Image
 
@@ -27,7 +28,10 @@ import meta_upload
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY") 
 PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
+GOOGLE_SEARCH_API_KEY = os.environ.get("GOOGLE_SEARCH_API_KEY")
+GOOGLE_CSE_ID = os.environ.get("GOOGLE_CSE_ID")
 YOUTUBE_TOKEN_VAL = os.environ.get("YOUTUBE_TOKEN_JSON")
+
 CHANNEL_HANDLE = "@TheGlitchArchive" 
 TOPICS_FILE = "topics.txt"
 
@@ -76,7 +80,7 @@ def save_new_topic(case_name):
 # ================== SCRIPT & SEO GENERATION ================== #
 
 def generate_viral_script():
-    print("🧠 Generating Master-Directed Script & SEO Metadata...")
+    print("🧠 Generating Master-Directed Dual Script (Audio + Visuals)...")
 
     client = genai.Client(api_key=GEMINI_KEY)
     models_to_try = ["models/gemini-2.5-pro", "models/gemini-2.5-flash"]
@@ -107,46 +111,49 @@ def generate_viral_script():
     avoid_instruction = f"CRITICAL: Do NOT write about these specific historical cases, we have already covered them:\n{past_topics}\n" if past_topics else "No past topics yet."
 
     prompt = f"""
-You are an elite viral YouTube Shorts writer, an Award-Winning Voice Director, AND a Master YouTube SEO Expert.
-Your channel is called "The Glitch Archive" focusing on dark, eerie, and baffling stories.
+You are an elite viral YouTube Shorts writer, an Award-Winning Voice Director, AND a Master Visual Editor.
+Your channel is "The Glitch Archive" focusing on dark, eerie, and baffling historical true crime/mysteries.
 
 TODAY'S TOPIC CATEGORY: {niche}
 
 Your task is to write a highly engaging, high-retention short-form script about a highly specific, obscure case or event that fits this category. 
-Do not invent a fake story; use a real, documented case, historical event, or widely reported anomaly, but focus on the most baffling aspects.
+Do not invent a fake story; use a real, documented case, historical event, or widely reported anomaly.
 
 {avoid_instruction}
 
 STRICT STORYTELLING & VIRAL RULES:
-1. THE HOOK (0-3s): First line MUST drop a bizarre paradox, an impossible fact, or a terrifying anomaly immediately. Make them NEED to know the answer.
-2. NATURAL PACING & STORYTELLING: Do not restrict yourself to a specific word count. Write a compelling, immersive story. Focus on building suspense, atmosphere, and a terrifying narrative arc that keeps the viewer hooked from the first second to the last. Take the time needed to explain the creepy details.
-3. OPEN LOOPS: Ask a compelling question early on, but delay the answer until the very end to force watch-time.
-4. THE PERFECT LOOP: The script MUST end abruptly on a cliffhanger that grammatically flows perfectly back into the first line of the video.
+1. THE HOOK (0-3s): First line MUST drop a bizarre paradox, an impossible fact, or a terrifying anomaly immediately.
+2. NATURAL PACING: Do not restrict yourself to a specific word count. Write an immersive story. Focus on building suspense.
+3. OPEN LOOPS: Ask a compelling question early on, but delay the answer until the very end.
+4. THE PERFECT LOOP: End abruptly on a cliffhanger that grammatically flows perfectly back into the first line.
 
 VOICE ACTING & EXPRESSION DIRECTION (CRITICAL FOR REALISM):
 - recommended_voice_model: Choose ONE specific voice model: "Charon" (gritty male), "Fenrir" (intense male), "Aoede" (haunting female), or "Kore" (unsettling female).
-- style_instruction: A short note on the vibe (e.g., "Hushed, terrified whisper as if telling a dangerous secret.")
-- EXPRESSION TAGS (SSML): You MUST use highly detailed, rich SSML tags inside `acting_text` to force the AI Voice Actor to pace itself perfectly. True Crime requires dramatic pauses and shifts in pitch.
-- Allowed tags: 
+- style_instruction: A short note on the vibe (e.g., "Hushed, terrified whisper.")
+- EXPRESSION TAGS (SSML): You MUST use highly detailed SSML tags inside `acting_text`.
   - <break time="0.5s"/> to <break time="2.0s"/> for suspenseful pauses.
   - <emphasis level="strong"> for shocking words.
   - <prosody rate="slow" pitch="low"> for dark, creeping explanations.
-- Example: "<prosody rate='slow' pitch='low'>He walked into the room...</prosody> <break time='1.5s'/> and <emphasis level='strong'>vanished</emphasis>."
-- Keep the `clean_text` completely free of these XML tags.
+- Keep the `clean_text` completely free of XML tags.
 
-VISUAL KEYWORDS & SEO:
-- visual_keyword: Invent highly specific visual keywords for EVERY line to ensure high-quality B-roll fetching.
-- title: Write a highly engaging, curiosity-inducing title. End with #shorts #mystery.
+VISUAL DIRECTOR INSTRUCTIONS (CRITICAL FOR RETENTION):
+Shorts require a visual change every 2.5 to 4 seconds. For EVERY line of dialogue, you MUST provide an array of 2 to 3 `visuals`. 
+You must choose between REAL EVIDENCE or AI GENERATION for each visual:
+- RULE A (REAL EVIDENCE): If referencing a real artifact, person, or document, write a highly specific Google Image query. (e.g., "Somerton Man 1948 unedited crime scene photo" or "Nampa Image doll 1889 close up").
+- RULE B (AI GENERATION): If the scene was never photographed or impossible to find, you MUST start the keyword with "AI_GEN: " followed by a descriptive prompt. (e.g., "AI_GEN: A dark, muddy tunnel deep underground with a cracked stone figure").
+
+YOUTUBE SEO:
+- title: Write a highly engaging title. End with #shorts #mystery.
 - case_name: Provide the actual historical name of the event/case to log it.
 - description: 3 lines of high-volume SEO keywords.
-- pinned_comment: Write a provocative, engaging question related to the case that the channel owner will pin to drive massive comments.
-- tags: Exactly 15 highly searched tags (mix of broad and long-tail).
+- pinned_comment: Write a provocative, engaging question related to the case.
+- tags: Exactly 15 highly searched tags.
 
 Return ONLY valid JSON in this format:
 {{
-  "title": "They found WHAT in the walls of this abandoned house? #shorts #mystery",
+  "title": "They found WHAT in the walls? #shorts #mystery",
   "case_name": "The Discovery of the Somerton Man",
-  "description": "Unsolved mysteries, scary stories, true crime documentary, bizarre historical events...",
+  "description": "Unsolved mysteries, scary stories, true crime documentary...",
   "pinned_comment": "If you found that note in your pocket, what would be your first move? Let me know 👇",
   "tags": ["mystery", "shorts", "unsolved", "scary", "glitch", "creepy"],
   "recommended_voice_model": "Charon",
@@ -155,7 +162,11 @@ Return ONLY valid JSON in this format:
       "style_instruction": "Hushed, terrified whisper as if telling a dangerous secret.",
       "acting_text": "<prosody rate='slow' pitch='low'>He walked into the room...</prosody> <break time='1.5s'/> and <emphasis level='strong'>vanished</emphasis>.",
       "clean_text": "He walked into the room and vanished.",
-      "visual_keyword": "muddy footprints on carpet"
+      "visuals": [
+        "AI_GEN: Shadowy silhouette of a man walking into a pitch black 1950s hotel room",
+        "Somerton Man hotel room 1948 crime scene photo",
+        "AI_GEN: Dusty footprints disappearing into thin air on a worn carpet"
+      ]
     }}
   ]
 }}
@@ -275,47 +286,82 @@ def add_sfx(audio_clip, text):
                     pass
     return audio_clip
 
-# ================== VISUAL FETCH ================== #
+# ================== DYNAMIC VISUAL FETCH ================== #
 
-def get_visual_clip(keyword, filename, duration):
-    headers = {"Authorization": PEXELS_KEY}
-    url = "https://api.pexels.com/videos/search"
+def fetch_ai_image(prompt, filename):
+    """Generates an image using SOTA FLUX.1 via Pollinations.ai"""
+    full_prompt = f"{prompt}, highly detailed, photorealistic, dark cinematic lighting, eerie true crime documentary style, 8k resolution"
+    encoded_prompt = urllib.parse.quote(full_prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true"
+    r = requests.get(url)
+    if r.status_code == 200:
+        with open(filename, "wb") as f:
+            f.write(r.content)
+        return True
+    return False
+
+def get_image_clip(keyword, duration, index):
+    """Fetches real historical images or SOTA AI images and applies Alternating Ken Burns."""
+    img_filename = f"temp_img_{index}.jpg"
+    success = False
     
-    params = {
-        "query": f"{keyword} cinematic dark", 
-        "per_page": 15, 
-        "page": random.randint(1, 4), 
-        "orientation": "portrait"
-    }
-    
+    # PATH A: SOTA AI Image Generation
+    if keyword.startswith("AI_GEN:"):
+        clean_prompt = keyword.replace("AI_GEN:", "").strip()
+        print(f"🪄 Generating SOTA AI Image: {clean_prompt[:40]}...")
+        success = fetch_ai_image(clean_prompt, img_filename)
+        
+    # PATH B: Real Evidence (Google Image Search)
+    else:
+        print(f"🔍 Searching Google for Evidence: {keyword}")
+        if GOOGLE_SEARCH_API_KEY and GOOGLE_CSE_ID:
+            url = "https://www.googleapis.com/customsearch/v1"
+            params = {
+                "q": f"{keyword} real historical photo evidence", 
+                "cx": GOOGLE_CSE_ID, "key": GOOGLE_SEARCH_API_KEY,
+                "searchType": "image", "num": 1, "safe": "active"
+            }
+            try:
+                r = requests.get(url, params=params).json()
+                if "items" in r:
+                    img_url = r["items"][0]["link"]
+                    with open(img_filename, "wb") as f:
+                        f.write(requests.get(img_url).content)
+                    success = True
+                else:
+                    print("⚠️ No Google results found. Falling back to AI Image...")
+            except Exception as e:
+                print(f"⚠️ Google API error: {e}")
+        
+        # SOTA Fallback if Google fails to find the historical photo
+        if not success:
+            success = fetch_ai_image(keyword, img_filename)
+
+    # Absolute fallback (Black screen) if both APIs completely fail
+    if not success or not os.path.exists(img_filename):
+        return ColorClip(size=(1080, 1920), color=(15, 15, 15), duration=duration)
+
+    # APPLY ALTERNATING KEN BURNS EFFECT
     try:
-        r = requests.get(url, headers=headers, params=params)
-        data = r.json()
+        clip = ImageClip(img_filename).set_duration(duration)
         
-        if data.get("videos"):
-            chosen_video = random.choice(data["videos"])
-            best_file = max(chosen_video["video_files"], key=lambda x: x["width"] * x["height"])
-            link = best_file["link"]
+        # Ensure image completely fills the 9:16 vertical frame
+        clip = clip.resize(height=1920)
+        if clip.w < 1080: clip = clip.resize(width=1080)
+        clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=1080, height=1920)
+        
+        # Alternating Zoom: Evens zoom IN, Odds zoom OUT to prevent visual fatigue
+        if index % 2 == 0:
+            zoom_func = lambda t: 1 + 0.05 * (t / duration)
+        else:
+            zoom_func = lambda t: 1.05 - 0.05 * (t / duration)
             
-            with open(filename, "wb") as f:
-                f.write(requests.get(link).content)
-
-            clip = VideoFileClip(filename)
-            clip = clip.without_audio()
-            
-            if clip.duration < duration:
-                loops = int(np.ceil(duration / clip.duration)) + 1
-                clip = clip.loop(n=loops)
-            clip = clip.subclip(0, duration)
-
-            if clip.h < 1920: clip = clip.resize(height=1920)
-            if clip.w < 1080: clip = clip.resize(width=1080)
-            clip = clip.crop(x1=clip.w/2 - 540, width=1080, height=1920)
-            return clip
+        clip = clip.resize(zoom_func)
+        clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=1080, height=1920)
+        return clip
     except Exception as e:
-        pass
-        
-    return ColorClip(size=(1080, 1920), color=(15, 15, 15), duration=duration)
+        print(f"⚠️ MoviePy Clip Generation Error: {e}")
+        return ColorClip(size=(1080, 1920), color=(15, 15, 15), duration=duration)
 
 # ================== SUBTITLES ================== #
 
@@ -374,12 +420,16 @@ def main_pipeline():
     print(f"🎙️ AI Casted Narrator: {target_voice}")
     
     final_clips = []
+    global_img_index = 0 # Keeps track for the alternating Ken Burns effect
 
     for i, line in enumerate(script["lines"]):
         try:
             acting_input = line.get("acting_text", line.get("text"))
             style_instruction = line.get("style_instruction", "Serious and highly suspenseful.")
             clean_text = line.get("clean_text", line.get("text", ""))
+            
+            # Extract the array of visuals generated by the AI Director
+            visuals_list = line.get("visuals", ["AI_GEN: dark cinematic eerie background"])
 
             wav_file = voice_engine.generate_acting_line(
                 acting_text=acting_input, 
@@ -395,17 +445,35 @@ def main_pipeline():
             audio_clip = AudioFileClip(wav_file)
             audio_clip = add_sfx(audio_clip, clean_text)
 
-            video_file = f"temp_vid_{i}.mp4"
-            clip = get_visual_clip(line["visual_keyword"], video_file, audio_clip.duration)
-
-            clip = clip.fx(colorx, 0.85).set_audio(audio_clip)
-
-            if i > 0:
-                clip = clip.set_start(final_clips[-1].end)
-                if random.random() < 0.2:
-                    clip = clip.fadein(0.1, color=[255,255,255]) 
+            # --- THE DYNAMIC VISUAL SLICER ---
+            line_visual_clips = []
             
-            final_clips.append(clip)
+            # Divide the duration of the audio clip by the number of generated visuals
+            duration_per_image = audio_clip.duration / max(1, len(visuals_list))
+            
+            for vis_keyword in visuals_list:
+                img_clip = get_image_clip(vis_keyword, duration_per_image, global_img_index)
+                
+                # Sequence the sub-clips within this single audio line
+                if len(line_visual_clips) > 0:
+                    img_clip = img_clip.set_start(line_visual_clips[-1].end)
+                else:
+                    img_clip = img_clip.set_start(0)
+                    
+                line_visual_clips.append(img_clip)
+                global_img_index += 1
+
+            # Combine all sliced visuals into one video clip that matches the exact length of the audio line
+            line_video = CompositeVideoClip(line_visual_clips).set_duration(audio_clip.duration)
+            
+            # Apply your true crime color grading and attach the audio
+            line_video = line_video.fx(colorx, 0.85).set_audio(audio_clip)
+
+            # Sequence the master timeline
+            if len(final_clips) > 0:
+                line_video = line_video.set_start(final_clips[-1].end)
+            
+            final_clips.append(line_video)
 
         except Exception as e:
             print(f"Clip error: {e}")
@@ -505,6 +573,9 @@ def cleanup_files(final_video):
             print(f"Deleted {final_video}")
 
         for f in glob.glob("temp_vid_*.mp4"):
+            os.remove(f)
+            
+        for f in glob.glob("temp_img_*.jpg"):
             os.remove(f)
             
         for f in glob.glob("temp_*.wav"):
