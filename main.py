@@ -39,6 +39,7 @@ TOPICS_FILE = "topics.txt"
 # Video Settings
 VIDEO_WIDTH = 720
 VIDEO_HEIGHT = 1280
+IMAGE_TRANSITION_TIME = 3.0 # Aim for a visual change every 3 seconds
 
 if not hasattr(PIL.Image, "ANTIALIAS"):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
@@ -78,197 +79,342 @@ def save_new_topic(case_name):
             f.write(f"{case_name}\n")
         print(f"💾 Saved '{case_name}' to memory bank.")
     except Exception as e:
-        print(f"⚠️ Failed to save topic: {e}")
+        print(f"⚠️ Failed to save topic to memory: {e}")
 
-# ================== SCRIPT & SEO GENERATION ==================
-def generate_viral_script():
-    print("🧠 Generating Master-Directed Dual Script (Audio + Visuals)...")
+# ================== GLOBAL SOTA INTELLIGENCE ==================
+def get_best_free_openrouter_model():
+    """Enterprise-grade SOTA selector using an ELO-weighted Reward Matrix."""
+    print("🔍 Scouting OpenRouter for the highest-quality free SOTA model...")
+    default_model = "meta-llama/llama-3.3-70b-instruct:free"
+    
+    # SOTA Models available for free on OpenRouter (Scores act as a 'reward' metric)
+    SOTA_REWARD_MATRIX = {
+        "deepseek/deepseek-r1:free": 99,             
+        "qwen/qwen-3.6-plus:free": 98,               
+        "arcee-ai/trinity-large-preview:free": 96,   
+        "meta-llama/llama-3.3-70b-instruct:free": 94,
+        "nvidia/nemotron-3-super:free": 92,
+        "google/gemma-4-31b-instruct:free": 90,      
+        "stepfun/step-3.5-flash:free": 85
+    }
+    
+    if not OPENROUTER_KEY:
+        print("⚠️ OPENROUTER_API_KEY missing. Defaulting to Llama 3.3.")
+        return default_model
+
+    try:
+        response = requests.get("https://openrouter.ai/api/v1/models", timeout=15)
+        if response.status_code != 200:
+            print(f"⚠️ OpenRouter API returned status {response.status_code}. Using default.")
+            return default_model
+            
+        models_data = response.json().get('data', [])
+        free_models = []
+        
+        for m in models_data:
+            pricing = m.get('pricing', {})
+            if (pricing.get('prompt') == '0' and pricing.get('completion') == '0') or ':free' in m['id']:
+                free_models.append(m['id'])
+                
+        if not free_models:
+            print("⚠️ No free models found in active list. Using default model.")
+            return default_model
+
+        # Reward Function Evaluation
+        def get_model_reward(m_id):
+            m_lower = m_id.lower()
+            
+            for known_model, score in SOTA_REWARD_MATRIX.items():
+                if known_model in m_lower:
+                    return score
+            
+            score = 50
+            if "qwen-3" in m_lower or "deepseek" in m_lower: score += 20
+            if "llama-3" in m_lower: score += 15
+            if "instruct" in m_lower or "chat" in m_lower: score += 10
+            return score
+
+        best_model = max(free_models, key=get_model_reward)
+        print(f"🌟 Global SOTA Brain Locked: {best_model} (Reward Score: {get_model_reward(best_model)})")
+        return best_model
+        
+    except Exception as e:
+        print(f"⚠️ Dynamic model scout failed: {e}. Using default model.")
+        return default_model
+
+# ================== PHASE 1: THE WRITER ==================
+def generate_viral_script(fallback_sota_model):
+    """Phase 1: Gemini strictly focuses on writing the script. Uses Global SOTA if Gemini fails."""
+    print("🧠 Phase 1: Generating Master Script (Writer)...")
     client = genai.Client(api_key=GEMINI_KEY)
     
-    models_to_try = ["models/gemini-2.5-flash"]
-
     content_pool = [
-        "Bizarre Unsolved Disappearances",
-        "Impossible Heists and Robberies",
-        "People Who Faked Their Own Deaths",
-        "Crimes Solved Decades Later",
-        "Real-life Glitches in the Matrix",
-        "Creepy Mandela Effects",
-        "Unexplained Time Slips",
-        "Bizarre and Impossible Coincidences",
-        "Bizarre Historical Artifacts That Shouldn't Exist",
-        "Lost Civilizations and Vanished Towns",
-        "Creepy Unsolved Mysteries from the 1800s",
-        "Unexplained Deep Sea Anomalies and Sounds",
-        "Ghost Ships Found Completely Abandoned",
-        "Creepy Hijacked TV and Radio Broadcasts",
-        "Mysterious Number Stations from the Cold War",
-        "Unsolved Internet Rabbit Holes"
+        "Bizarre Unsolved Disappearances", "Impossible Heists and Robberies",
+        "People Who Faked Their Own Deaths", "Real-life Glitches in the Matrix",
+        "Bizarre Historical Artifacts That Shouldn't Exist", "Creepy Hijacked TV and Radio Broadcasts"
     ]
-
     niche = random.choice(content_pool)
-    print(f"🎲 Selected Category for Today: {niche}")
+    print(f"🎲 Selected Category: {niche}")
 
     past_topics = get_past_topics()
-    avoid_instruction = f"CRITICAL: Do NOT write about these specific historical cases, we have already covered them:\n{past_topics}\n" if past_topics else "No past topics yet."
+    avoid_instruction = f"CRITICAL: Do NOT write about these cases:\n{past_topics}\n" if past_topics else ""
 
-    prompt = f"""
-You are an elite viral YouTube Shorts writer, an Award-Winning Voice Director, AND a Master Visual Editor.
-Your channel is "The Glitch Archive" focusing on dark, eerie, and baffling historical true crime/mysteries.
-TODAY'S TOPIC CATEGORY: {niche}
-Your task is to write a highly engaging, high-retention short-form script about a highly specific, obscure case or event that fits this category.
-Do not invent a fake story; use a real, documented case, historical event, or widely reported anomaly.
-{avoid_instruction}
-
-STRICT STORYTELLING & VIRAL RULES:
-THE HOOK (0-3s): First line MUST drop a bizarre paradox, an impossible fact, or a terrifying anomaly immediately.
-NATURAL PACING: Do not restrict yourself to a specific word count. Write an immersive story. Focus on building suspense.
-OPEN LOOPS: Ask a compelling question early on, but delay the answer until the very end.
-THE PERFECT LOOP: End abruptly on a cliffhanger that grammatically flows perfectly back into the first line.
-
-VOICE ACTING & EXPRESSION DIRECTION (CRITICAL FOR REALISM):
-recommended_voice_model: Choose ONE specific voice model: "Charon" (gritty male), "Fenrir" (intense male), "Aoede" (haunting female), or "Kore" (unsettling female).
-style_instruction: A short note on the vibe (e.g., "Hushed, terrified whisper.")
-
-EXPRESSION TAGS (SSML): You MUST use highly detailed SSML tags inside `acting_text`.
-<break time="1s"/> for suspenseful pauses.
-<emphasis> for shocking words.
-<prosody rate="slow" pitch="-10%"> for dark, creeping explanations.
-Keep the `clean_text` completely free of XML tags.
-
-VISUAL DIRECTOR INSTRUCTIONS (CRITICAL FOR RETENTION):
-Shorts require a visual change every 2.5 to 4 seconds. For EVERY line of dialogue, you MUST provide an array of 1 to 2 `visuals`.
-You must choose between REAL EVIDENCE or AI GENERATION for each visual:
-RULE A (REAL EVIDENCE): If referencing a real artifact, person, or document, write a highly specific Google Image query. (e.g., "Somerton Man 1948 unedited crime scene photo" or "Nampa Image doll 1889 close up").
-RULE B (AI GENERATION): If the scene was never photographed or impossible to find, you MUST start the keyword with "AI_GEN: " followed by a descriptive prompt. (e.g., "AI_GEN: A dark, muddy tunnel deep underground with a cracked stone figure").
-
-YOUTUBE SEO:
-title: Write a highly engaging title. End with #shorts #mystery.
-case_name: Provide the actual historical name of the event/case to log it.
-description: 3 lines of high-volume SEO keywords.
-pinned_comment: Write a provocative, engaging question related to the case.
-tags: Exactly 15 highly searched tags.
-
-Return ONLY valid JSON in this format:
-{{
-    "title": "They found WHAT in the walls? #shorts #mystery",
-    "case_name": "The Discovery of the Somerton Man",
-    "description": "Unsolved mysteries, scary stories, true crime documentary...",
-    "pinned_comment": "If you found that note in your pocket, what would be your first move? Let me know 👇",
+    json_template = '''
+{
+    "title": "They found WHAT? #shorts #mystery",
+    "case_name": "The Somerton Man",
+    "description": "Unsolved mysteries, true crime documentary...",
+    "pinned_comment": "What would be your first move? 👇",
     "tags": ["mystery", "shorts", "unsolved", "scary", "glitch", "creepy"],
     "recommended_voice_model": "Charon",
     "lines": [
-        {{
-            "style_instruction": "Hushed, terrified whisper as if telling a dangerous secret.",
+        {
+            "style_instruction": "Hushed, terrified whisper.",
             "acting_text": "He walked into the room... <break time='1.5s'/> and <emphasis>vanished</emphasis>.",
-            "clean_text": "He walked into the room and vanished.",
-            "visuals": [
-                "AI_GEN: Shadowy silhouette of a man walking into a pitch black 1950s hotel room",
-                "Somerton Man hotel room 1948 crime scene photo"
-            ]
-        }}
+            "clean_text": "He walked into the room and vanished."
+        }
     ]
-}}
-"""
+}
+'''
 
-    config = types.GenerateContentConfig(
-        temperature=0.9,
-        top_p=0.95,
-        response_mime_type="application/json"
-    )
-
-    for model in models_to_try:
-        try:
-            print(f"Trying {model}...")
-            response = client.models.generate_content(model=model, contents=prompt, config=config)
-            if response.text:
-                data = json.loads(response.text)
-                if "lines" in data and len(data["lines"]) > 0:
-                    print(f"✅ Script & SEO generated with {model}")
-                    return data
-        except Exception as e:
-            print(f"❌ Model error ({model}): {e}")
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                print("⏳ Quota hit during script generation. Sleeping 5s before fallback...")
-                time.sleep(5)
-            continue
-
-    if OPENROUTER_KEY:
-        print("🔄 Gemini exhausted/failed. Falling back to OpenRouter (Llama 3.3 70B)...")
-        try:
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_KEY}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": "meta-llama/llama-3.3-70b-instruct:free",
-                "messages": [{"role": "user", "content": prompt}]
-            }
-            
-            r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
-            
-            if r.status_code == 200:
-                response_content = r.json()['choices'][0]['message']['content']
-                cleaned_content = response_content.replace("```json", "").replace("```", "").strip()
-                data = json.loads(cleaned_content)
-                
-                if "lines" in data and len(data["lines"]) > 0:
-                    print("✅ Script & SEO generated with OpenRouter Fallback")
-                    return data
-            else:
-                print(f"❌ OpenRouter request failed: {r.text}")
-        except Exception as e:
-            print(f"❌ OpenRouter Fallback error: {e}")
-
-    return None
-
-def generate_meta_caption(metadata):
-    print("🤖 Generating optimized Meta caption...")
-    client = genai.Client(api_key=GEMINI_KEY)
     prompt = f"""
-Write a highly engaging, suspenseful caption for a Facebook Reel and Instagram Reel about this mystery video:
-Video Title: {metadata['title']}
-Video Description: {metadata['description']}
+You are an elite viral YouTube Shorts writer and an Award-Winning Voice Director.
+Channel: "The Glitch Archive" (dark, eerie historical true crime/mysteries).
+CATEGORY: {niche}
+Write a highly engaging script about a highly specific, obscure real case.
+{avoid_instruction}
 
-RULES:
-- The tone should be captivating and mysterious.
-- Include a call to action asking viewers to comment their thoughts.
-- Include 5-7 highly relevant, trending hash tags (e.g. #Mystery #Unsolved #Glitch).
-- Do not use any quotation marks around the final output.
-- Keep it under 150 words.
+STRICT RULES:
+1. THE HOOK (0-3s): First line MUST drop a bizarre paradox immediately.
+2. THE LOOP: End on a cliffhanger that flows perfectly back to the start.
+
+EXPRESSION TAGS (SSML): You MUST use SSML tags inside `acting_text`.
+<break time="1s"/> for suspenseful pauses. <emphasis> for shocking words.
+Keep the `clean_text` completely free of XML tags.
+
+Return ONLY valid JSON exactly matching this format:
+{json_template}
 """
-
+    
+    config = types.GenerateContentConfig(temperature=0.9, top_p=0.95, response_mime_type="application/json")
+    
     try:
-        config = types.GenerateContentConfig(temperature=0.7)
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=config)
-        print("✅ Meta Caption generated successfully with Gemini!")
-        return response.text.strip()
+        response = client.models.generate_content(model="models/gemini-2.5-pro", contents=prompt, config=config)
+        data = json.loads(response.text)
+        print("✅ Script written successfully with Gemini.")
+        return data
     except Exception as e:
-        print(f"❌ Gemini API Error for caption: {e}")
+        print(f"⚠️ Gemini Script Error: {e}")
         
         if OPENROUTER_KEY:
-            print("🔄 Falling back to OpenRouter for caption generation...")
+            print(f"🔄 Activating Global SOTA Brain ({fallback_sota_model}) for Script Generation...")
             try:
-                headers = {
-                    "Authorization": f"Bearer {OPENROUTER_KEY}",
-                    "Content-Type": "application/json"
-                }
+                headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
                 payload = {
-                    "model": "meta-llama/llama-3.3-70b-instruct:free",
-                    "messages": [{"role": "user", "content": prompt}]
+                    "model": fallback_sota_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_object"}
                 }
                 r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
                 if r.status_code == 200:
-                    caption = r.json()['choices'][0]['message']['content'].strip()
-                    caption = caption.strip('"') 
-                    print("✅ Meta Caption generated successfully with OpenRouter!")
-                    return caption
-            except Exception as or_e:
-                print(f"❌ OpenRouter API Error for caption: {or_e}")
+                    content = r.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip()
+                    print(f"✅ Script written successfully with SOTA Fallback ({fallback_sota_model}).")
+                    return json.loads(content)
+                else:
+                    print(f"❌ SOTA Fallback request failed: {r.text}")
+            except Exception as sota_e:
+                print(f"❌ SOTA Fallback error: {sota_e}")
 
-    return f"{metadata['title']}\n\nWhat do you think happened? Let us know below! 👇\n\n#Mystery #Shorts #Unsolved #Creepy"
+    return None
 
-# ================== SFX ==================
+
+# ================== PHASE 3: THE CINEMATOGRAPHER ==================
+def generate_cinematographer_prompts(full_script_text, required_images, sota_model):
+    """Phase 3: The Global SOTA Brain analyzes the script and outputs perfectly paced visual prompts."""
+    print(f"🎬 Phase 3: Directing {required_images} perfectly-paced visuals using SOTA Brain ({sota_model})...")
+    
+    json_template = '''
+{
+  "visuals": [
+    {
+      "search_query": "1977 Southern Television broadcast real photo",
+      "ai_prompt": "A glowing CRT television in a pitch black 1970s living room, eerie green glow, photorealistic, 8k, volumetric lighting"
+    }
+  ]
+}
+'''
+
+    prompt = f"""
+You are an elite Cinematographer for a True Crime / Mystery YouTube Shorts channel.
+Here is the voiceover script for our new video:
+"{full_script_text}"
+
+The final audio track is already recorded. To perfectly pace the video, we need EXACTLY {required_images} visual transitions. 
+For each of the {required_images} scenes, you must provide two things:
+1. 'search_query': A very specific, real-world Google Image search term.
+2. 'ai_prompt': A highly detailed, photorealistic Midjourney-style prompt as a fallback if the real photo isn't found.
+
+Provide EXACTLY {required_images} items in a JSON array. Return ONLY valid JSON matching this format:
+{json_template}
+"""
+    
+    headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": sota_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"}
+    }
+    
+    try:
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
+        
+        if response.status_code == 200:
+            content = response.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip()
+            data = json.loads(content)
+            visuals = data.get("visuals", [])
+            
+            while len(visuals) < required_images:
+                print("⚠️ Cinematographer array too short. Appending safety fallback.")
+                visuals.append({"search_query": "creepy mystery historical evidence", "ai_prompt": "Dark cinematic mystery background, true crime, 8k"})
+            
+            return visuals[:required_images]
+        else:
+            print(f"❌ OpenRouter API returned status: {response.status_code} - {response.text}")
+            
+    except Exception as e:
+        print(f"❌ Cinematographer execution error: {e}")
+        
+    print("🚨 Generating emergency visual prompts to prevent pipeline crash.")
+    return [{"search_query": "mystery evidence photo", "ai_prompt": "dark cinematic eerie background 8k"} for _ in range(required_images)]
+
+
+# ================== TITANIUM IMAGE FETCHING PIPELINE ==================
+def fetch_siliconflow_image(prompt, filename):
+    print(f"🌊 [2/5] SiliconFlow (FLUX.1): {prompt[:40]}...")
+    if not SILICONFLOW_KEY:
+        print("⚠️ SILICONFLOW_API_KEY missing. Skipping SiliconFlow layer.")
+        return False
+        
+    url = "https://api.siliconflow.cn/v1/images/generations"
+    headers = {"Authorization": f"Bearer {SILICONFLOW_KEY}", "Content-Type": "application/json"}
+    payload = {"model": "black-forest-labs/FLUX.1-schnell", "prompt": f"{prompt}, photorealistic, true crime documentary style", "image_size": "768x1024", "batch_size": 1}
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=45)
+        if response.status_code == 200:
+            img_data = requests.get(response.json()['images'][0]['url'], timeout=20).content
+            with open(filename, "wb") as f: f.write(img_data)
+            if os.path.getsize(filename) > 1000: 
+                print("✅ SiliconFlow image successfully generated.")
+                return True
+        else:
+            print(f"⚠️ SiliconFlow API error: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"⚠️ SiliconFlow connection error: {e}")
+    return False
+
+def fetch_cloudflare_image(prompt, filename):
+    print(f"☁️ [3/5] Cloudflare (FLUX.1): {prompt[:40]}...")
+    if not CF_ACCOUNT_ID or not CF_API_TOKEN:
+        print("⚠️ Cloudflare credentials missing. Skipping Cloudflare layer.")
+        return False
+        
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell"
+    headers = {"Authorization": f"Bearer {CF_API_TOKEN}", "Content-Type": "application/json"}
+    payload = {"prompt": f"{prompt}, dark cinematic, vertical video format"}
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=45)
+        if response.status_code == 200:
+            with open(filename, "wb") as f: f.write(response.content)
+            if os.path.getsize(filename) > 1000: 
+                print("✅ Cloudflare image successfully generated.")
+                return True
+        else:
+            print(f"⚠️ Cloudflare API error: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"⚠️ Cloudflare connection error: {e}")
+    return False
+
+def fetch_pexels_image(prompt, filename):
+    print(f"📷 [4/5] Pexels (Stock): {prompt[:40]}...")
+    if not PEXELS_KEY:
+        print("⚠️ PEXELS_API_KEY missing. Skipping Pexels layer.")
+        return False
+        
+    url = "https://api.pexels.com/v1/search"
+    clean_search = prompt.replace("photorealistic", "").replace("highly detailed", "").strip()
+    params = {"query": " ".join(clean_search.split()[:5]), "per_page": 1, "orientation": "portrait"}
+    
+    try:
+        response = requests.get(url, headers={"Authorization": PEXELS_KEY}, params=params, timeout=30)
+        if response.status_code == 200 and response.json().get("photos"):
+            img_data = requests.get(response.json()["photos"][0]["src"]["large2x"], timeout=20).content
+            with open(filename, "wb") as f: f.write(img_data)
+            if os.path.getsize(filename) > 1000: 
+                print("✅ Pexels stock image successfully downloaded.")
+                return True
+        else:
+            print(f"⚠️ Pexels API returned status: {response.status_code}")
+    except Exception as e:
+        print(f"⚠️ Pexels connection error: {e}")
+    return False
+
+def fetch_placeholder_image(keyword, filename):
+    print(f"🚨 [5/5] EMERGENCY: Generating fallback placeholder image...")
+    try:
+        from PIL import Image, ImageDraw
+        img = Image.new('RGB', (VIDEO_WIDTH, VIDEO_HEIGHT), color=(20, 20, 30))
+        img.save(filename, "JPEG")
+        print("✅ Placeholder generated successfully.")
+        return True
+    except Exception as e:
+        print(f"❌ Critical failure generating placeholder image: {e}")
+        return False
+
+def get_image_clip(search_query, ai_prompt, duration, index):
+    """Executes the Titanium fetch cascade based on Cinematographer's prompts."""
+    img_filename = f"temp_img_{index}.jpg"
+    success = False
+    
+    if SEARCH_API_KEY and GOOGLE_CSE_ID:
+        print(f"🔍 [1/5] Google Search: {search_query[:40]}")
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {"q": search_query, "cx": GOOGLE_CSE_ID, "key": SEARCH_API_KEY, "searchType": "image", "num": 1}
+        try:
+            response = requests.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            if "items" in data:
+                img_data = requests.get(data["items"][0]["link"], timeout=20).content
+                with open(img_filename, "wb") as f: f.write(img_data)
+                if os.path.getsize(img_filename) > 1000: 
+                    print("✅ Google Search image successfully downloaded.")
+                    success = True
+        except requests.exceptions.Timeout:
+            print("⚠️ Google Search API timed out.")
+        except Exception as e:
+            print(f"⚠️ Google Search API error: {e}")
+
+    if not success: success = fetch_siliconflow_image(ai_prompt, img_filename)
+    if not success: success = fetch_cloudflare_image(ai_prompt, img_filename)
+    if not success: success = fetch_pexels_image(ai_prompt, img_filename)
+    if not success: success = fetch_placeholder_image(search_query, img_filename)
+
+    try:
+        clip = ImageClip(img_filename).set_duration(duration).resize(height=VIDEO_HEIGHT)
+        if clip.w < VIDEO_WIDTH: clip = clip.resize(width=VIDEO_WIDTH)
+        clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=VIDEO_WIDTH, height=VIDEO_HEIGHT)
+        
+        # Apply gentle Ken Burns zoom effect
+        zoom = (lambda t: 1 + 0.05 * (t / duration)) if index % 2 == 0 else (lambda t: 1.05 - 0.05 * (t / duration))
+        clip = clip.resize(zoom).crop(x_center=VIDEO_WIDTH/2, y_center=VIDEO_HEIGHT/2, width=VIDEO_WIDTH, height=VIDEO_HEIGHT)
+        return clip
+    except Exception as e:
+        print(f"❌ Error applying MoviePy properties to image: {e}")
+        return ColorClip(size=(VIDEO_WIDTH, VIDEO_HEIGHT), color=(20, 20, 35), duration=duration)
+
+# ================== META, SUBTITLES & YOUTUBE ==================
 def add_sfx(audio_clip, text):
     text_lower = text.lower()
     for k, v in SFX_MAP.items():
@@ -277,490 +423,206 @@ def add_sfx(audio_clip, text):
             if os.path.exists(path):
                 try:
                     sfx = AudioFileClip(path).volumex(0.20)
-                    if sfx.duration > audio_clip.duration:
-                        sfx = sfx.subclip(0, audio_clip.duration)
+                    if sfx.duration > audio_clip.duration: sfx = sfx.subclip(0, audio_clip.duration)
                     return CompositeAudioClip([audio_clip, sfx])
-                except:
-                    pass
+                except Exception as e:
+                    print(f"⚠️ Error adding SFX '{v}': {e}")
     return audio_clip
 
-# ================== TITANIUM IMAGE FETCHING PIPELINE ==================
-
-def fetch_siliconflow_image(prompt, filename):
-    """Layer 2: SiliconFlow (SOTA AI - FLUX.1)"""
-    print(f"🌊 [2/5] SiliconFlow (FLUX.1): {prompt[:40]}...")
-    
-    if not SILICONFLOW_KEY:
-        print("⚠️ SILICONFLOW_API_KEY missing. Skipping.")
-        return False
-
-    url = "https://api.siliconflow.cn/v1/images/generations"
-    headers = {
-        "Authorization": f"Bearer {SILICONFLOW_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "black-forest-labs/FLUX.1-schnell",
-        "prompt": f"{prompt}, photorealistic, dark cinematic lighting, highly detailed true crime documentary style, 8k resolution",
-        "image_size": "768x1024",
-        "batch_size": 1
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=45)
-        if response.status_code == 200:
-            data = response.json()
-            if 'images' in data and len(data['images']) > 0:
-                img_url = data['images'][0]['url']
-                img_data = requests.get(img_url, timeout=20).content
-                
-                with open(filename, "wb") as f:
-                    f.write(img_data)
-                    
-                if os.path.getsize(filename) > 1000:
-                    print("✅ SiliconFlow image generated successfully!")
-                    return True
-        else:
-            print(f"⚠️ SiliconFlow API returned: {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"⚠️ SiliconFlow error: {e}")
-        
-    return False
-
-def fetch_cloudflare_image(prompt, filename):
-    """Layer 3: Cloudflare Workers AI (Unkillable Edge API)"""
-    print(f"☁️ [3/5] Cloudflare (FLUX.1): {prompt[:40]}...")
-    
-    if not CF_ACCOUNT_ID or not CF_API_TOKEN:
-        print("⚠️ Cloudflare credentials missing. Skipping.")
-        return False
-
-    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell"
-    headers = {
-        "Authorization": f"Bearer {CF_API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "prompt": f"{prompt}, dark cinematic, true crime, highly detailed, vertical video format"
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=45)
-        if response.status_code == 200:
-            with open(filename, "wb") as f:
-                f.write(response.content)
-                
-            if os.path.getsize(filename) > 1000:
-                print("✅ Cloudflare image generated successfully!")
-                return True
-        else:
-            print(f"⚠️ Cloudflare API returned: {response.status_code}")
-    except Exception as e:
-        print(f"⚠️ Cloudflare error: {e}")
-        
-    return False
-
-def fetch_pexels_image(prompt, filename):
-    """Layer 4: Pexels HD Stock Image"""
-    print(f"📷 [4/5] Pexels (Stock): {prompt[:40]}...")
-    if not PEXELS_KEY:
-        print("⚠️ PEXELS_API_KEY missing. Skipping.")
-        return False
-
-    url = "https://api.pexels.com/v1/search"
-    
-    # Clean the prompt of AI jargon so Pexels can understand it
-    clean_search = prompt.replace("photorealistic", "").replace("highly detailed", "").replace("dark cinematic lighting", "").strip()
-    
-    # Grab the first 3-5 core words so the search isn't too restrictive
-    search_query = " ".join(clean_search.split()[:5])
-
-    headers = {"Authorization": PEXELS_KEY}
-    params = {"query": search_query, "per_page": 3, "orientation": "portrait"}
-
-    try:
-        r = requests.get(url, headers=headers, params=params, timeout=30)
-        if r.status_code == 200:
-            data = r.json()
-            if "photos" in data and len(data["photos"]) > 0:
-                img_url = data["photos"][0]["src"]["large2x"]
-                img_data = requests.get(img_url, timeout=20).content
-                
-                with open(filename, "wb") as f:
-                    f.write(img_data)
-                    
-                if os.path.getsize(filename) > 1000:
-                    print("✅ Pexels image downloaded successfully!")
-                    return True
-        else:
-            print(f"⚠️ Pexels API returned: {r.status_code}")
-    except Exception as e:
-        print(f"⚠️ Pexels error: {e}")
-        
-    return False
-
-def fetch_placeholder_image(keyword, filename):
-    """Layer 5: Emergency Placeholder (Guaranteed to work)"""
-    print(f"🚨 [5/5] EMERGENCY: Creating placeholder image...")
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        img = Image.new('RGB', (VIDEO_WIDTH, VIDEO_HEIGHT), color=(10, 10, 20))
-        draw = ImageDraw.Draw(img)
-        for y in range(VIDEO_HEIGHT):
-            r = int(10 + (y / VIDEO_HEIGHT) * 20)
-            g = int(10 + (y / VIDEO_HEIGHT) * 20)
-            b = int(20 + (y / VIDEO_HEIGHT) * 40)
-            draw.line([(0, y), (VIDEO_WIDTH, y)], fill=(r, g, b))
-        
-        words = keyword.replace("AI_GEN:", "").replace("real historical photo", "").strip()[:60]
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/msttcorefonts/Impact.ttf", 48)
-            small_font = ImageFont.truetype("/usr/share/fonts/truetype/msttcorefonts/Arial.ttf", 32)
-        except:
-            font = ImageFont.load_default()
-            small_font = font
-            
-        draw.text((VIDEO_WIDTH//2, VIDEO_HEIGHT//2 - 50), "MYSTERY", fill=(255, 215, 0), font=font, anchor="mm")
-        draw.text((VIDEO_WIDTH//2, VIDEO_HEIGHT//2 + 50), words, fill=(200, 200, 200), font=small_font, anchor="mm")
-        draw.text((VIDEO_WIDTH//2, VIDEO_HEIGHT//2 + 150), "⚫ ◼️ ", fill=(100, 100, 100), font=font, anchor="mm")
-        
-        img.save(filename, "JPEG", quality=95)
-        print("✅ Placeholder image created!")
-        return True
-    except Exception as e:
-        print(f"❌ Placeholder creation failed: {e}")
-        return False
-
-def verify_and_convert_image(filename):
-    """Validates and converts images to RGB JPEG"""
-    try:
-        with PIL.Image.open(filename) as img:
-            img.verify()
-        with PIL.Image.open(filename) as img:
-            if img.mode in ('RGBA', 'P', 'LA', 'L'):
-                img = img.convert('RGB')
-            img.save(filename, format='JPEG', quality=95)
-        return True
-    except Exception as e:
-        print(f"⚠️ Image verification failed: {e}")
-        return False
-
-def get_image_clip(keyword, duration, index):
-    """Titanium 5-Layer Image Fetching Pipeline"""
-    img_filename = f"temp_img_{index}.jpg"
-    success = False
-    
-    try:
-        clean_prompt = keyword.replace("AI_GEN:", "").strip() if keyword.startswith("AI_GEN:") else keyword
-
-        # === LAYER 1: Google Custom Search ===
-        if not keyword.startswith("AI_GEN:"):
-            print(f"🔍 [1/5] Searching Google for: {keyword[:50]}...")
-            if SEARCH_API_KEY and GOOGLE_CSE_ID:
-                url = "https://www.googleapis.com/customsearch/v1"
-                params = {
-                    "q": f"{keyword} real historical photo evidence",
-                    "cx": GOOGLE_CSE_ID,
-                    "key": SEARCH_API_KEY,
-                    "searchType": "image",
-                    "num": 1,
-                    "safe": "active"
-                }
-                try:
-                    r = requests.get(url, params=params, timeout=15, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-                    r.raise_for_status()
-                    data = r.json()
-                    if "items" in data and len(data["items"]) > 0:
-                        img_url = data["items"][0]["link"]
-                        print(f"📥 Downloading from Google: {img_url[:60]}...")
-                        headers = {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
-                        }
-                        img_data = requests.get(img_url, headers=headers, timeout=20).content
-                        with open(img_filename, "wb") as f:
-                            f.write(img_data)
-                        if os.path.exists(img_filename) and os.path.getsize(img_filename) > 1000:
-                            success = True
-                            print(f"✅ Google image downloaded ({os.path.getsize(img_filename)} bytes)")
-                except requests.exceptions.Timeout:
-                    print("⏱️ Google API timed out")
-                except Exception as e:
-                    print(f"⚠️ Google API error: {e}")
-        else:
-            print("⏭️ Skipping Google Search (AI_GEN requested)")
-
-        # === LAYER 2: SiliconFlow ===
-        if not success:
-            success = fetch_siliconflow_image(clean_prompt, img_filename)
-        
-        # === LAYER 3: Cloudflare ===
-        if not success:
-            success = fetch_cloudflare_image(clean_prompt, img_filename)
-            
-        # === LAYER 4: Pexels ===
-        if not success:
-            success = fetch_pexels_image(clean_prompt, img_filename)
-        
-        # === LAYER 5: Emergency Placeholder ===
-        if not success:
-            success = fetch_placeholder_image(keyword, img_filename)
-        
-        # === VALIDATE & CONVERT ===
-        if success and os.path.exists(img_filename):
-            file_size = os.path.getsize(img_filename)
-            print(f"📊 Image file size: {file_size} bytes")
-            if file_size < 500:
-                print("⚠️ Image file too small, attempting conversion...")
-                success = False
-            try:
-                verify_and_convert_image(img_filename)
-            except Exception as e:
-                print(f"⚠️ Image conversion issue: {e}")
-
-        # === CREATE VIDEO CLIP ===
-        try:
-            clip = ImageClip(img_filename).set_duration(duration)
-            clip = clip.resize(height=VIDEO_HEIGHT)
-            if clip.w < VIDEO_WIDTH:
-                clip = clip.resize(width=VIDEO_WIDTH)
-            clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=VIDEO_WIDTH, height=VIDEO_HEIGHT)
-            
-            if index % 2 == 0:
-                zoom_func = lambda t: 1 + 0.05 * (t / duration)
-            else:
-                zoom_func = lambda t: 1.05 - 0.05 * (t / duration)
-                
-            clip = clip.resize(zoom_func)
-            clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=VIDEO_WIDTH, height=VIDEO_HEIGHT)
-            print(f"✅ Clip {index} created successfully!")
-            return clip
-        except Exception as e:
-            print(f"⚠️ MoviePy clip error: {e}")
-            return ColorClip(size=(VIDEO_WIDTH, VIDEO_HEIGHT), color=(20, 20, 35), duration=duration)
-            
-    except Exception as e:
-        print(f"❌ Critical error in get_image_clip: {e}")
-        return ColorClip(size=(VIDEO_WIDTH, VIDEO_HEIGHT), color=(20, 20, 35), duration=duration)
-
-# ================== SUBTITLES ==================
 def add_dynamic_subtitles(video_clip, audio_path):
     print("📝 Transcribing audio for word-level subtitles...")
-    model = WhisperModel("tiny", device="cpu", compute_type="int8")
-    segments, _ = model.transcribe(audio_path, word_timestamps=True)
-    subtitle_clips = []
-
-    for segment in segments:
-        for word in segment.words:
-            clean_word = word.word.strip().upper()
-            if not clean_word:
-                continue
-            try:
-                txt_clip = TextClip(
-                    clean_word,
-                    fontsize=70,
-                    color='yellow',
-                    stroke_color='black',
-                    stroke_width=2,
-                    font='Impact',
-                    method='caption',
-                    size=(video_clip.w * 0.9, None)
-                ).set_start(word.start).set_end(word.end).set_position(('center', video_clip.h * 0.70))
-                
-                subtitle_clips.append(txt_clip)
-            except Exception as e:
-                print(f"⚠️ Subtitle text rendering error for word '{clean_word}': {e}")
-
-    print(f"✅ Generated {len(subtitle_clips)} word captions!")
-    return CompositeVideoClip([video_clip] + subtitle_clips)
-
-# ================== MAIN PIPELINE ==================
-def main_pipeline():
-    anti_ban_sleep()
     try:
-        voice_engine = VoiceEngine()
-    except Exception as e:
-        print(f"Voice engine error: {e}")
-        return None, None
-
-    script = generate_viral_script()
-    if not script:
-        return None, None
+        model = WhisperModel("tiny", device="cpu", compute_type="int8")
+        segments, _ = model.transcribe(audio_path, word_timestamps=True)
+        subtitle_clips = []
         
-    print(f"🎬 Title: {script['title']}")
-    print(f"📁 Case Logged: {script.get('case_name', 'Unknown Case')}")
-    print(f"🏷️ Tags: {', '.join(script['tags'][:5])}...")
-
-    target_voice = script.get("recommended_voice_model", "Charon")
-    print(f"🎙️ AI Casted Narrator: {target_voice}")
-
-    final_clips = []
-    global_img_index = 0
-
-    for i, line in enumerate(script["lines"]):
-        try:
-            acting_input = line.get("acting_text", line.get("text"))
-            style_instruction = line.get("style_instruction", "Serious and highly suspenseful.")
-            clean_text = line.get("clean_text", line.get("text", ""))
-            visuals_list = line.get("visuals", ["AI_GEN: dark cinematic eerie background"])
-
-            wav_file = voice_engine.generate_acting_line(
-                acting_text=acting_input,
-                clean_text=clean_text,
-                style_instruction=style_instruction,
-                index=i,
-                voice_name=target_voice
-            )
-
-            if not wav_file:
-                continue
-
-            audio_clip = AudioFileClip(wav_file)
-            audio_clip = add_sfx(audio_clip, clean_text)
-
-            line_visual_clips = []
-            duration_per_image = audio_clip.duration / max(1, len(visuals_list))
-            
-            for vis_keyword in visuals_list:
-                img_clip = get_image_clip(vis_keyword, duration_per_image, global_img_index)
-                if len(line_visual_clips) > 0:
-                    img_clip = img_clip.set_start(line_visual_clips[-1].end)
-                else:
-                    img_clip = img_clip.set_start(0)
-                line_visual_clips.append(img_clip)
-                global_img_index += 1
-
-            line_video = CompositeVideoClip(line_visual_clips).set_duration(audio_clip.duration)
-            line_video = line_video.fx(colorx, 0.85).set_audio(audio_clip)
-
-            if len(final_clips) > 0:
-                line_video = line_video.set_start(final_clips[-1].end)
-            final_clips.append(line_video)
-
-        except Exception as e:
-            print(f"Clip error: {e}")
-
-    if not final_clips:
-        print("❌ No clips generated.")
-        return None, None
-
-    print("✂️ Rendering Final Video with Transitions & Branding...")
-    final_video = CompositeVideoClip(final_clips)
-
-    temp_voice_track = "temp_master_voice.wav"
-    final_video.audio.write_audiofile(temp_voice_track, fps=24000, logger=None)
-    final_video = add_dynamic_subtitles(final_video, temp_voice_track)
-    if os.path.exists(temp_voice_track):
-        os.remove(temp_voice_track)
-
-    try:
-        watermark = TextClip(
-            CHANNEL_HANDLE,
-            fontsize=30,
-            color='white',
-            font='Impact',
-            stroke_color='black',
-            stroke_width=2
-        ).set_opacity(0.4).set_position(('center', 150)).set_duration(final_video.duration)
-        final_video = CompositeVideoClip([final_video, watermark])
+        for segment in segments:
+            for word in segment.words:
+                clean = word.word.strip().upper()
+                if clean:
+                    try:
+                        txt = TextClip(clean, fontsize=70, color='yellow', stroke_color='black', stroke_width=2, font='Impact', method='caption', size=(video_clip.w * 0.9, None))
+                        txt = txt.set_start(word.start).set_end(word.end).set_position(('center', video_clip.h * 0.70))
+                        subtitle_clips.append(txt)
+                    except Exception as e:
+                        print(f"⚠️ Failed to render subtitle word '{clean}': {e}")
+                        
+        print(f"✅ Generated {len(subtitle_clips)} valid word captions!")
+        return CompositeVideoClip([video_clip] + subtitle_clips)
     except Exception as e:
-        print(f"⚠️ Could not add watermark: {e}")
+        print(f"❌ Whisper Transcription failed entirely: {e}")
+        return video_clip
 
-    print("🎵 Adding Background Music...")
-    music_files = glob.glob("music/track*.mp3")
-
-    if music_files:
-        chosen_track = random.choice(music_files)
-        try:
-            bg_music = AudioFileClip(chosen_track).volumex(0.08)
-            bg_music = audio_loop(bg_music, duration=final_video.duration)
-            final_audio = CompositeAudioClip([final_video.audio, bg_music])
-            final_video = final_video.set_audio(final_audio)
-        except Exception as e:
-            pass
-
-    output_file = "final_video.mp4"
-    final_video.write_videofile(
-        output_file,
-        codec="libx264",
-        audio_codec="aac",
-        fps=24,
-        preset="fast",
-        threads=2,
-        logger=None
-    )
-    return output_file, script
-
-# ================== YOUTUBE UPLOAD ==================
 def upload_to_youtube(file_path, metadata):
-    if not file_path:
-        return False
+    if not file_path: return False
     print("🚀 Uploading to YouTube...")
     try:
         creds = Credentials.from_authorized_user_info(json.loads(YOUTUBE_TOKEN_VAL))
         youtube = build("youtube", "v3", credentials=creds)
         full_description = f"{metadata['description']}\n\n{metadata.get('pinned_comment', '')}"
-
+        
         youtube.videos().insert(
             part="snippet,status",
             body={
-                "snippet": {
-                    "title": metadata["title"],
-                    "description": full_description,
-                    "tags": metadata["tags"],
-                    "categoryId": "24"
-                },
-                "status": {
-                    "privacyStatus": "public",
-                    "selfDeclaredMadeForKids": False
-                }
+                "snippet": {"title": metadata["title"], "description": full_description, "tags": metadata["tags"], "categoryId": "24"}, 
+                "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
             },
             media_body=MediaFileUpload(file_path, chunksize=-1, resumable=True)
         ).execute()
-        print("✅ YouTube Upload Successful")
+        print("✅ YouTube Upload Successful!")
         return True
-    except Exception as e:
+    except Exception as e: 
         print(f"❌ YouTube Upload failed: {e}")
         return False
 
-# ================== CLEANUP ==================
-def cleanup_files(final_video):
-    print("🧹 Starting cleanup phase...")
+def generate_meta_caption(metadata, fallback_sota_model):
+    print("🤖 Generating optimized Meta caption...")
+    client = genai.Client(api_key=GEMINI_KEY)
+    prompt = f"Write an engaging caption for this mystery video:\nTitle: {metadata['title']}\nDescription: {metadata['description']}\nInclude a call to action and hashtags."
+    
     try:
-        if final_video and os.path.exists(final_video):
-            os.remove(final_video)
-            print(f"Deleted {final_video}")
-        for f in glob.glob("temp_vid_*.mp4"):
-            os.remove(f)
-        for f in glob.glob("temp_img_*.jpg"):
-            os.remove(f)
-        for f in glob.glob("temp_*.wav"):
-            os.remove(f)
-        print("✅ Cleanup complete!")
+        config = types.GenerateContentConfig(temperature=0.7)
+        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=config)
+        print("✅ Meta Caption generated successfully with Gemini.")
+        return response.text.strip()
+    except Exception as e: 
+        print(f"⚠️ Gemini Meta caption generation failed: {e}")
+        
+        if OPENROUTER_KEY:
+            print(f"🔄 Activating Global SOTA Brain ({fallback_sota_model}) for Caption Generation...")
+            try:
+                headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
+                payload = {"model": fallback_sota_model, "messages": [{"role": "user", "content": prompt}]}
+                r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
+                if r.status_code == 200:
+                    caption = r.json()['choices'][0]['message']['content'].strip('"').strip()
+                    print(f"✅ Meta Caption generated successfully with SOTA Fallback.")
+                    return caption
+            except Exception as sota_e:
+                print(f"❌ SOTA Fallback error: {sota_e}")
+                
+        return f"{metadata['title']}\n\nWhat do you think happened? Let us know! 👇\n\n#Mystery #Shorts"
+
+# ================== MASTER ORCHESTRATION ==================
+def main_pipeline():
+    anti_ban_sleep()
+    
+    try:
+        voice_engine = VoiceEngine()
     except Exception as e:
-        print(f"⚠️ Error during cleanup: {e}")
+        print(f"❌ VoiceEngine Initialization Error: {e}")
+        return None, None, None
+
+    # PHASE 0: AWAKEN GLOBAL SOTA BRAIN
+    global_sota_model = get_best_free_openrouter_model()
+
+    # PHASE 1: WRITER
+    script = generate_viral_script(global_sota_model)
+    if not script: 
+        print("❌ Script generation returned None. Aborting.")
+        return None, None, None
+        
+    print(f"🎬 Title: {script['title']}")
+
+    # PHASE 2: RECORDING STUDIO (Audio First)
+    print("🎙️ Phase 2: Recording Studio (Generating Voiceover...)")
+    audio_clips = []
+    full_script_text = ""
+    target_voice = script.get("recommended_voice_model", "Charon")
+
+    for i, line in enumerate(script["lines"]):
+        clean_text = line.get("clean_text", "")
+        full_script_text += clean_text + " "
+        
+        try:
+            wav_file = voice_engine.generate_acting_line(
+                acting_text=line.get("acting_text", ""),
+                clean_text=clean_text,
+                style_instruction=line.get("style_instruction", ""),
+                index=i,
+                voice_name=target_voice
+            )
+            if wav_file:
+                audio_clip = AudioFileClip(wav_file)
+                audio_clip = add_sfx(audio_clip, clean_text)
+                audio_clips.append(audio_clip)
+        except Exception as e:
+            print(f"❌ Error generating audio for line {i}: {e}")
+
+    if not audio_clips: 
+        print("❌ No audio clips successfully generated. Aborting.")
+        return None, None, None
+    
+    master_voice_clip = concatenate_audioclips(audio_clips)
+    total_duration = master_voice_clip.duration
+    
+    required_images = int(total_duration / IMAGE_TRANSITION_TIME)
+    if required_images < 1: required_images = 1
+    
+    print(f"⏱️ Master Audio Duration: {total_duration:.2f}s | Images Needed: {required_images}")
+
+    # PHASE 3 & 4: CINEMATOGRAPHER & FETCHING (Powered by Global SOTA)
+    visual_directions = generate_cinematographer_prompts(full_script_text, required_images, global_sota_model)
+    duration_per_image = total_duration / len(visual_directions)
+    
+    visual_clips = []
+    for i, vis in enumerate(visual_directions):
+        img_clip = get_image_clip(vis.get("search_query", ""), vis.get("ai_prompt", ""), duration_per_image, i)
+        visual_clips.append(img_clip)
+
+    # FINAL STITCH
+    print("✂️ Rendering Final Video with Transitions & Subtitles...")
+    try:
+        final_video = concatenate_videoclips(visual_clips, method="compose").set_duration(total_duration)
+        final_video = final_video.set_audio(master_voice_clip).fx(colorx, 0.85)
+    except Exception as e:
+        print(f"❌ Final composition stitch failed: {e}")
+        return None, None, None
+
+    temp_voice_track = "temp_master_voice.wav"
+    master_voice_clip.write_audiofile(temp_voice_track, fps=24000, logger=None)
+    final_video = add_dynamic_subtitles(final_video, temp_voice_track)
+
+    try:
+        watermark = TextClip(
+            CHANNEL_HANDLE, fontsize=30, color='white', font='Impact', stroke_color='black', stroke_width=2
+        ).set_opacity(0.4).set_position(('center', 150)).set_duration(final_video.duration)
+        final_video = CompositeVideoClip([final_video, watermark])
+    except Exception as e:
+        print(f"⚠️ Error applying watermark layer: {e}")
+
+    output_file = "final_video.mp4"
+    print(f"💾 Writing final video file to {output_file}...")
+    try:
+        final_video.write_videofile(
+            output_file, codec="libx264", audio_codec="aac", fps=24, preset="fast", threads=2, logger=None
+        )
+    except Exception as e:
+        print(f"❌ Critical failure during video encoding: {e}")
+        return None, None, None
+    
+    try:
+        for f in glob.glob("temp_*.wav") + glob.glob("temp_*.jpg"): os.remove(f)
+    except Exception as e:
+        print(f"⚠️ Minor error during temporary file cleanup: {e}")
+        
+    return output_file, script, global_sota_model
 
 # ================== ENTRY ==================
 if __name__ == "__main__":
-    video_path, metadata = main_pipeline()
-    if video_path and metadata:
-        upload_success = upload_to_youtube(video_path, metadata)
-        
-        if upload_success:
-            case_to_save = metadata.get('case_name', metadata['title'])
-            save_new_topic(case_to_save)
+    video_path, metadata, global_sota = main_pipeline()
+    if video_path and metadata and global_sota:
+        if upload_to_youtube(video_path, metadata):
+            save_new_topic(metadata.get('case_name', metadata['title']))
             
-            meta_caption = generate_meta_caption(metadata)
+            # The Marketer is also powered by the Global SOTA
+            meta_caption = generate_meta_caption(metadata, global_sota)
             meta_upload.upload_to_facebook(video_path, meta_caption)
             
-            temp_public_url = meta_upload.get_temp_public_url(video_path)
-            if temp_public_url:
-                meta_upload.upload_to_instagram(temp_public_url, meta_caption)
+            temp_url = meta_upload.get_temp_public_url(video_path)
+            if temp_url: 
+                meta_upload.upload_to_instagram(temp_url, meta_caption)
             else:
                 print("⏭️ Skipping Instagram due to temporary host failure.")
-        
-        cleanup_files(video_path)
-        
+                
     print("🎉 Daily GhostBot execution finished!")
