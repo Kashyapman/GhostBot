@@ -28,7 +28,6 @@ GOOGLE_CSE_ID = os.environ.get("GOOGLE_CSE_ID")
 YOUTUBE_TOKEN_VAL = os.environ.get("YOUTUBE_TOKEN_JSON")
 
 # TITANIUM PIPELINE KEYS
-SILICONFLOW_KEY = os.environ.get("SILICONFLOW_API_KEY")
 CF_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
 CF_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN")
 PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
@@ -87,7 +86,6 @@ def get_best_free_openrouter_model():
     print("🔍 Scouting OpenRouter for the highest-quality free SOTA model...")
     default_model = "meta-llama/llama-3.3-70b-instruct:free"
     
-    # SOTA Models available for free on OpenRouter (Scores act as a 'reward' metric)
     SOTA_REWARD_MATRIX = {
         "deepseek/deepseek-r1:free": 99,             
         "qwen/qwen-3.6-plus:free": 98,               
@@ -120,13 +118,10 @@ def get_best_free_openrouter_model():
             print("⚠️ No free models found in active list. Using default model.")
             return default_model
 
-        # Reward Function Evaluation
         def get_model_reward(m_id):
             m_lower = m_id.lower()
-            
             for known_model, score in SOTA_REWARD_MATRIX.items():
-                if known_model in m_lower:
-                    return score
+                if known_model in m_lower: return score
             
             score = 50
             if "qwen-3" in m_lower or "deepseek" in m_lower: score += 20
@@ -227,7 +222,6 @@ Return ONLY valid JSON exactly matching this format:
 
     return None
 
-
 # ================== PHASE 3: THE CINEMATOGRAPHER ==================
 def generate_cinematographer_prompts(full_script_text, required_images, sota_model):
     """Phase 3: The Global SOTA Brain analyzes the script and outputs perfectly paced visual prompts."""
@@ -287,34 +281,9 @@ Provide EXACTLY {required_images} items in a JSON array. Return ONLY valid JSON 
     print("🚨 Generating emergency visual prompts to prevent pipeline crash.")
     return [{"search_query": "mystery evidence photo", "ai_prompt": "dark cinematic eerie background 8k"} for _ in range(required_images)]
 
-
-# ================== TITANIUM IMAGE FETCHING PIPELINE ==================
-def fetch_siliconflow_image(prompt, filename):
-    print(f"🌊 [2/5] SiliconFlow (FLUX.1): {prompt[:40]}...")
-    if not SILICONFLOW_KEY:
-        print("⚠️ SILICONFLOW_API_KEY missing. Skipping SiliconFlow layer.")
-        return False
-        
-    url = "https://api.siliconflow.cn/v1/images/generations"
-    headers = {"Authorization": f"Bearer {SILICONFLOW_KEY}", "Content-Type": "application/json"}
-    payload = {"model": "black-forest-labs/FLUX.1-schnell", "prompt": f"{prompt}, photorealistic, true crime documentary style", "image_size": "768x1024", "batch_size": 1}
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=45)
-        if response.status_code == 200:
-            img_data = requests.get(response.json()['images'][0]['url'], timeout=20).content
-            with open(filename, "wb") as f: f.write(img_data)
-            if os.path.getsize(filename) > 1000: 
-                print("✅ SiliconFlow image successfully generated.")
-                return True
-        else:
-            print(f"⚠️ SiliconFlow API error: {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"⚠️ SiliconFlow connection error: {e}")
-    return False
-
+# ================== 4-LAYER TITANIUM PIPELINE ==================
 def fetch_cloudflare_image(prompt, filename):
-    print(f"☁️ [3/5] Cloudflare (FLUX.1): {prompt[:40]}...")
+    print(f"☁️ [2/4] Cloudflare (FLUX.1): {prompt[:40]}...")
     if not CF_ACCOUNT_ID or not CF_API_TOKEN:
         print("⚠️ Cloudflare credentials missing. Skipping Cloudflare layer.")
         return False
@@ -337,7 +306,7 @@ def fetch_cloudflare_image(prompt, filename):
     return False
 
 def fetch_pexels_image(prompt, filename):
-    print(f"📷 [4/5] Pexels (Stock): {prompt[:40]}...")
+    print(f"📷 [3/4] Pexels (Stock): {prompt[:40]}...")
     if not PEXELS_KEY:
         print("⚠️ PEXELS_API_KEY missing. Skipping Pexels layer.")
         return False
@@ -361,7 +330,7 @@ def fetch_pexels_image(prompt, filename):
     return False
 
 def fetch_placeholder_image(keyword, filename):
-    print(f"🚨 [5/5] EMERGENCY: Generating fallback placeholder image...")
+    print(f"🚨 [4/4] EMERGENCY: Generating fallback placeholder image...")
     try:
         from PIL import Image, ImageDraw
         img = Image.new('RGB', (VIDEO_WIDTH, VIDEO_HEIGHT), color=(20, 20, 30))
@@ -372,13 +341,26 @@ def fetch_placeholder_image(keyword, filename):
         print(f"❌ Critical failure generating placeholder image: {e}")
         return False
 
+def verify_and_convert_image(filename):
+    """Validates and converts incoming API images (PNG/WEBP) to strict RGB JPEGs for MoviePy."""
+    try:
+        with PIL.Image.open(filename) as img:
+            img.load() # Force load the image to check for corruption
+            if img.mode in ('RGBA', 'P', 'LA', 'L'):
+                img = img.convert('RGB')
+            img.save(filename, format='JPEG', quality=95)
+        return True
+    except Exception as e:
+        print(f"⚠️ Image validation failed: {e}")
+        return False
+
 def get_image_clip(search_query, ai_prompt, duration, index):
-    """Executes the Titanium fetch cascade based on Cinematographer's prompts."""
+    """Executes the 4-Layer Titanium fetch cascade based on Cinematographer's prompts."""
     img_filename = f"temp_img_{index}.jpg"
     success = False
     
     if SEARCH_API_KEY and GOOGLE_CSE_ID:
-        print(f"🔍 [1/5] Google Search: {search_query[:40]}")
+        print(f"🔍 [1/4] Google Search: {search_query[:40]}")
         url = "https://www.googleapis.com/customsearch/v1"
         params = {"q": search_query, "cx": GOOGLE_CSE_ID, "key": SEARCH_API_KEY, "searchType": "image", "num": 1}
         try:
@@ -396,10 +378,14 @@ def get_image_clip(search_query, ai_prompt, duration, index):
         except Exception as e:
             print(f"⚠️ Google Search API error: {e}")
 
-    if not success: success = fetch_siliconflow_image(ai_prompt, img_filename)
     if not success: success = fetch_cloudflare_image(ai_prompt, img_filename)
     if not success: success = fetch_pexels_image(ai_prompt, img_filename)
     if not success: success = fetch_placeholder_image(search_query, img_filename)
+
+    # ---> SANITIZE THE IMAGE BEFORE MOVIEPY SEES IT <---
+    if not verify_and_convert_image(img_filename):
+        print("🚨 Image corrupt or unreadable. Using emergency placeholder.")
+        fetch_placeholder_image(search_query, img_filename)
 
     try:
         clip = ImageClip(img_filename).set_duration(duration).resize(height=VIDEO_HEIGHT)
