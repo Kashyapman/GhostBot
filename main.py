@@ -78,11 +78,11 @@ def save_new_topic(case_name):
     except Exception as e:
         print(f"⚠️ Failed to save topic to memory: {e}")
 
-# ================== GLOBAL SOTA INTELLIGENCE ==================
-def get_best_free_openrouter_model():
-    """Task-Optimized SOTA selector prioritizing strict JSON formatting and creative writing."""
-    print("🔍 Scouting OpenRouter for the best creative & structured SOTA model...")
-    default_model = "meta-llama/llama-3.3-70b-instruct:free"
+# ================== GLOBAL SOTA INTELLIGENCE (CASCADE) ==================
+def get_top_free_openrouter_models(limit=3):
+    """Task-Optimized SOTA selector prioritizing strict JSON formatting. Returns Top N models for cascading."""
+    print("🔍 Scouting OpenRouter for the best creative & structured SOTA models...")
+    default_models = ["meta-llama/llama-3.3-70b-instruct:free", "qwen/qwen-3.6-plus:free", "mistralai/mistral-large:free"]
     
     SOTA_REWARD_MATRIX = {
         "meta-llama/llama-3.3-70b-instruct:free": 99, 
@@ -94,14 +94,14 @@ def get_best_free_openrouter_model():
     }
     
     if not OPENROUTER_KEY:
-        print("⚠️ OPENROUTER_API_KEY missing. Defaulting to Llama 3.3.")
-        return default_model
+        print(f"⚠️ OPENROUTER_API_KEY missing. Defaulting to {default_models}.")
+        return default_models
 
     try:
         response = requests.get("https://openrouter.ai/api/v1/models", timeout=15)
         if response.status_code != 200:
-            print(f"⚠️ OpenRouter API returned status {response.status_code}. Using default.")
-            return default_model
+            print(f"⚠️ OpenRouter API returned status {response.status_code}. Using defaults.")
+            return default_models
             
         models_data = response.json().get('data', [])
         free_models = []
@@ -112,12 +112,11 @@ def get_best_free_openrouter_model():
                 free_models.append(m['id'])
                 
         if not free_models:
-            print("⚠️ No free models found in active list. Using default model.")
-            return default_model
+            print("⚠️ No free models found in active list. Using default models.")
+            return default_models
 
         def get_model_reward(m_id):
             m_lower = m_id.lower()
-            
             for known_model, score in SOTA_REWARD_MATRIX.items():
                 if known_model in m_lower: 
                     return score
@@ -131,44 +130,48 @@ def get_best_free_openrouter_model():
             
             if "preview" in m_lower or "experimental" in m_lower or "liquid" in m_lower or "test" in m_lower: 
                 score -= 40
-                
             return score
 
-        best_model = max(free_models, key=get_model_reward)
-        print(f"🌟 Task-Optimized SOTA Locked: {best_model} (Reward Score: {get_model_reward(best_model)})")
-        return best_model
+        best_models = sorted(free_models, key=get_model_reward, reverse=True)[:limit]
+        print(f"🌟 Task-Optimized SOTA Cascade Locked: {best_models}")
+        return best_models
         
     except Exception as e:
-        print(f"⚠️ Dynamic model scout failed: {e}. Using default model.")
-        return default_model
+        print(f"⚠️ Dynamic model scout failed: {e}. Using defaults.")
+        return default_models
 
 # ================== LLM HELPER ==================
-def ask_llm(system_instruction, prompt, sota_model):
-    """A clean, robust helper function for single-task text generation with strict output constraints."""
+def ask_llm(system_instruction, prompt, sota_models):
+    """A robust helper function that loops through SOTA models until one succeeds."""
     strict_prompt = prompt + "\n\nCRITICAL RULE: Return ONLY the exact requested text. Do not include introductory conversational text like 'Here is the title:' or 'Sure!'"
     
     if OPENROUTER_KEY:
-        headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
-        payload = {"model": sota_model, "messages": [{"role": "system", "content": system_instruction}, {"role": "user", "content": strict_prompt}]}
-        try:
-            r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=45)
-            if r.status_code == 200:
-                return r.json()['choices'][0]['message']['content'].strip()
-        except Exception as e:
-            print(f"⚠️ SOTA LLM error: {e}")
+        for sota_model in sota_models:
+            headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
+            payload = {"model": sota_model, "messages": [{"role": "system", "content": system_instruction}, {"role": "user", "content": strict_prompt}]}
+            try:
+                r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=45)
+                if r.status_code == 200:
+                    return r.json()['choices'][0]['message']['content'].strip()
+                else:
+                    print(f"⚠️ OpenRouter ({sota_model}) returned {r.status_code}. Cascading to next model...")
+            except Exception as e:
+                print(f"⚠️ SOTA LLM error ({sota_model}): {e}")
 
+    # Final Fallback to Gemini Flash
     try:
+        print("⚠️ All OpenRouter models busy. Falling back to Gemini Flash...")
         client = genai.Client(api_key=GEMINI_KEY)
         config = types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.7)
         response = client.models.generate_content(model="gemini-2.5-flash", contents=strict_prompt, config=config)
         return response.text.strip()
     except Exception as e:
-        print(f"⚠️ Gemini fallback error: {e}")
+        print(f"⚠️ Gemini final fallback error: {e}")
         return ""
 
 # ================== PHASE 1: THE WRITER ==================
-def generate_viral_script(fallback_sota_model):
-    """Phase 1: Writer module purely focused on high-retention script structure and TTS emotional tags."""
+def generate_viral_script(fallback_sota_models):
+    """Phase 1: Writer module. Tries Gemini Pro first, then cascades through Top 3 OpenRouter models."""
     print("🧠 Phase 1: Generating Master Script (Writer)...")
     client = genai.Client(api_key=GEMINI_KEY)
     
@@ -235,31 +238,26 @@ Return ONLY valid JSON exactly matching this format:
         print(f"⚠️ Gemini Script Error: {e}")
         
         if OPENROUTER_KEY:
-            print(f"🔄 Activating Global SOTA Brain ({fallback_sota_model}) for Script Generation...")
-            try:
-                headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
-                payload = {
-                    "model": fallback_sota_model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "response_format": {"type": "json_object"}
-                }
-                r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
-                if r.status_code == 200:
-                    content = r.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip()
-                    print(f"✅ Script written successfully with SOTA Fallback ({fallback_sota_model}).")
-                    return json.loads(content)
-                else:
-                    print(f"❌ SOTA Fallback request failed: {r.text}")
-            except Exception as sota_e:
-                print(f"❌ SOTA Fallback error: {sota_e}")
+            headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
+            for fallback_model in fallback_sota_models:
+                print(f"🔄 Activating Global SOTA Brain ({fallback_model}) for Script Generation...")
+                payload = {"model": fallback_model, "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}}
+                try:
+                    r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
+                    if r.status_code == 200:
+                        content = r.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip()
+                        print(f"✅ Script written successfully with SOTA Fallback ({fallback_model}).")
+                        return json.loads(content)
+                    else:
+                        print(f"❌ SOTA Fallback {fallback_model} busy/failed ({r.status_code}). Cascading to next...")
+                except Exception as sota_e:
+                    print(f"❌ SOTA Fallback error for {fallback_model}: {sota_e}")
 
     return None
 
 # ================== PHASE 3: THE CINEMATOGRAPHER ==================
-def generate_cinematographer_prompts(full_script_text, required_images, sota_model):
-    """Phase 3: Exclusively focused on Production-Level Visual Directives for DDG and FLUX."""
-    print(f"🎬 Phase 3: Directing {required_images} perfectly-paced visuals using SOTA Brain ({sota_model})...")
-    
+def generate_cinematographer_prompts(full_script_text, required_images, sota_models):
+    """Phase 3: Visual Directives module that cascades through available top models."""
     json_template = '''
 {
   "visuals": [
@@ -300,34 +298,29 @@ Provide EXACTLY {required_images} items. Return ONLY valid JSON matching this fo
 """
     
     headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": sota_model,
-        "messages": [{"role": "user", "content": prompt}],
-        "response_format": {"type": "json_object"}
-    }
     
-    try:
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
-        
-        if response.status_code == 200:
-            content = response.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip()
-            data = json.loads(content)
-            visuals = data.get("visuals", [])
+    for sota_model in sota_models:
+        print(f"🎬 Phase 3: Directing {required_images} perfectly-paced visuals using SOTA Brain ({sota_model})...")
+        payload = {"model": sota_model, "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}}
+        try:
+            response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
+            if response.status_code == 200:
+                content = response.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip()
+                data = json.loads(content)
+                visuals = data.get("visuals", [])
+                
+                while len(visuals) < required_images:
+                    print("⚠️ Cinematographer array too short. Appending safety fallback.")
+                    visuals.append({
+                        "search_query": "historical true crime evidence photo archive", 
+                        "ai_prompt": "Dark cinematic mystery background, true crime documentary style, volumetric lighting, 35mm photography, 8k resolution, highly detailed, vertical composition"
+                    })
+                return visuals[:required_images]
+            else:
+                print(f"❌ Cinematographer API ({sota_model}) returned {response.status_code}. Cascading...")
+        except Exception as e:
+            print(f"❌ Cinematographer execution error ({sota_model}): {e}")
             
-            while len(visuals) < required_images:
-                print("⚠️ Cinematographer array too short. Appending safety fallback.")
-                visuals.append({
-                    "search_query": "historical true crime evidence photo archive", 
-                    "ai_prompt": "Dark cinematic mystery background, true crime documentary style, volumetric lighting, 35mm photography, 8k resolution, highly detailed, vertical composition"
-                })
-            
-            return visuals[:required_images]
-        else:
-            print(f"❌ OpenRouter API returned status: {response.status_code} - {response.text}")
-            
-    except Exception as e:
-        print(f"❌ Cinematographer execution error: {e}")
-        
     print("🚨 Generating emergency visual prompts to prevent pipeline crash.")
     return [{
         "search_query": "historical mystery evidence photo archive", 
@@ -536,7 +529,7 @@ def upload_to_youtube(file_path, yt_metadata):
         return False
 
 # ================== PHASE 5: THE MARKETER (STRICT CHAIN) ==================
-def generate_youtube_metadata(full_script_text, sota_model):
+def generate_youtube_metadata(full_script_text, sota_models):
     """Executes a strict 1-to-1 prompt isolation workflow exclusively for YouTube SEO."""
     print("📈 Phase 5: Marketer - Generating YouTube SEO Chain...")
     sys_prompt = "You are an elite YouTube Shorts SEO Strategist. You ONLY output the exact data requested, with absolutely no conversational filler, no greetings, and no markdown blocks."
@@ -544,26 +537,26 @@ def generate_youtube_metadata(full_script_text, sota_model):
     # Task 1: Generate Title ONLY
     print("   -> Drafting optimized Title...")
     t_prompt = f"Read this short script and write ONE highly viral, click-oriented YouTube Shorts title (under 60 characters). Do not include quotes, hashtags, or introductory text.\nScript: {full_script_text}"
-    title = ask_llm(sys_prompt, t_prompt, sota_model).strip('"').replace("'", "")
+    title = ask_llm(sys_prompt, t_prompt, sota_models).strip('"').replace("'", "")
     if not title or len(title) > 80: title = "They found WHAT?"
     
     # Task 2: Generate Description ONLY (Based on Title)
     print("   -> Drafting optimized Description...")
     d_prompt = f"You have a YouTube Short titled: '{title}'. The script is: '{full_script_text}'. Write a compelling 3-sentence description optimized for the YouTube algorithm. Do not use hashtags or introductory text."
-    description = ask_llm(sys_prompt, d_prompt, sota_model)
+    description = ask_llm(sys_prompt, d_prompt, sota_models)
     if not description: description = "An unsolved mystery that will leave you speechless."
     
     # Task 3: Generate Tags ONLY (Based on Title + Description)
     print("   -> Extracting optimized Tags...")
     tag_prompt = f"You have a YouTube Short titled: '{title}' and described as: '{description}'. Provide exactly 8 highly-searched SEO tags. Return ONLY a comma-separated list of words. Do not use hashtags (#) or introductory text."
-    tags_str = ask_llm(sys_prompt, tag_prompt, sota_model)
+    tags_str = ask_llm(sys_prompt, tag_prompt, sota_models)
     tags = [t.strip().replace("#", "") for t in tags_str.split(',')] if tags_str else ["mystery", "shorts", "creepy", "unsolved", "truecrime"]
 
     title_with_hashtags = f"{title} #shorts #mystery"
     print("✅ YouTube SEO Chain Complete.")
     return {"title": title_with_hashtags, "description": description, "tags": tags}
 
-def generate_platform_captions(yt_metadata, platform, sota_model):
+def generate_platform_captions(yt_metadata, platform, sota_models):
     """Generates strictly isolated platform-specific captions."""
     print(f"🤖 Generating optimized {platform} caption...")
     sys_prompt = f"You are an elite {platform} Social Media Manager. You output ONLY the final caption text with absolutely no introductory words or conversational filler."
@@ -573,7 +566,7 @@ def generate_platform_captions(yt_metadata, platform, sota_model):
     else: # Facebook
         prompt = f"Convert this YouTube metadata into a highly engaging Facebook Reels caption.\nTitle: {yt_metadata['title']}\nDescription: {yt_metadata['description']}\nREQUIREMENTS: Facebook audiences love storytelling. Make it conversational, ask a highly specific question to drive comments, and use 3 broad hashtags. NO introductory text."
         
-    caption = ask_llm(sys_prompt, prompt, sota_model)
+    caption = ask_llm(sys_prompt, prompt, sota_models)
     if not caption: caption = f"{yt_metadata['title']}\n\nWhat do you think happened? 👇\n\n#Mystery"
     return caption
 
@@ -587,11 +580,11 @@ def main_pipeline():
         print(f"❌ VoiceEngine Initialization Error: {e}")
         return None, None, None, None
 
-    # PHASE 0: AWAKEN GLOBAL SOTA BRAIN
-    global_sota_model = get_best_free_openrouter_model()
+    # PHASE 0: AWAKEN GLOBAL SOTA BRAIN (CASCADE ARRAY)
+    global_sota_models = get_top_free_openrouter_models()
 
     # PHASE 1: WRITER
-    script = generate_viral_script(global_sota_model)
+    script = generate_viral_script(global_sota_models)
     if not script: 
         print("❌ Script generation returned None. Aborting.")
         return None, None, None, None
@@ -636,7 +629,7 @@ def main_pipeline():
     print(f"⏱️ Master Audio Duration: {total_duration:.2f}s | Images Needed: {required_images}")
 
     # PHASE 3 & 4: CINEMATOGRAPHER & FETCHING 
-    visual_directions = generate_cinematographer_prompts(full_script_text, required_images, global_sota_model)
+    visual_directions = generate_cinematographer_prompts(full_script_text, required_images, global_sota_models)
     duration_per_image = total_duration / len(visual_directions)
     
     visual_clips = []
@@ -680,26 +673,26 @@ def main_pipeline():
     except Exception as e:
         print(f"⚠️ Minor error during temporary file cleanup: {e}")
         
-    return output_file, script, full_script_text, global_sota_model
+    return output_file, script, full_script_text, global_sota_models
 
 # ================== ENTRY ==================
 if __name__ == "__main__":
-    video_path, script_data, full_script_text, global_sota = main_pipeline()
+    video_path, script_data, full_script_text, global_sota_models = main_pipeline()
     
-    if video_path and script_data and global_sota:
+    if video_path and script_data and global_sota_models:
         
         # PHASE 5: THE MARKETER (Execute SEO Chain)
-        yt_metadata = generate_youtube_metadata(full_script_text, global_sota)
+        yt_metadata = generate_youtube_metadata(full_script_text, global_sota_models)
         
         if upload_to_youtube(video_path, yt_metadata):
             case_name = script_data.get('case_name', 'Unknown Case')
             save_new_topic(case_name)
             
             # Platform Specific Marketing
-            fb_caption = generate_platform_captions(yt_metadata, "Facebook", global_sota)
+            fb_caption = generate_platform_captions(yt_metadata, "Facebook", global_sota_models)
             meta_upload.upload_to_facebook(video_path, fb_caption)
             
-            ig_caption = generate_platform_captions(yt_metadata, "Instagram", global_sota)
+            ig_caption = generate_platform_captions(yt_metadata, "Instagram", global_sota_models)
             temp_url = meta_upload.get_temp_public_url(video_path)
             if temp_url: 
                 meta_upload.upload_to_instagram(temp_url, ig_caption)
