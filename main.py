@@ -177,24 +177,33 @@ def generate_viral_script(fallback_sota_model):
 }
 '''
 
-    prompt = f"""
+        prompt = f"""
 You are an elite viral YouTube Shorts writer and an Award-Winning Voice Director.
 Channel: "The Glitch Archive" (dark, eerie historical true crime/mysteries).
 CATEGORY: {niche}
-Write a highly engaging script about a highly specific, obscure real case.
+
+MISSION:
+Write a highly engaging, high-retention script about a highly specific, obscure REAL case. 
+DO NOT invent a fake story. Use a strictly documented historical event, crime, or widely reported anomaly.
 {avoid_instruction}
 
-STRICT RULES:
-1. THE HOOK (0-3s): First line MUST drop a bizarre paradox immediately.
-2. THE LOOP: End on a cliffhanger that flows perfectly back to the start.
+STRICT STORYTELLING RULES (FOR 100%+ RETENTION):
+1. THE HOOK (0-3s): The first sentence MUST drop a bizarre paradox, an impossible fact, or a terrifying anomaly.
+2. THE OPEN LOOP: In the second sentence, introduce a mystery or ask a compelling question, but delay the answer until the very end.
+3. THE PACING: The script must be exactly 130 to 160 words (roughly 45-55 seconds of spoken audio).
+4. THE PERFECT LOOP: The final sentence must end abruptly on a cliffhanger that grammatically and conceptually flows perfectly back into the first sentence.
 
-EXPRESSION TAGS (SSML): You MUST use SSML tags inside `acting_text`.
-<break time="1s"/> for suspenseful pauses. <emphasis> for shocking words.
-Keep the `clean_text` completely free of XML tags.
+EXPRESSION TAGS (SSML) FOR VOICE ACTING:
+You MUST use SSML tags inside `acting_text` to direct the AI voice.
+- Use <break time="1s"/> or <break time="1.5s"/> for terrifying, suspenseful pauses before big reveals.
+- Use <emphasis level="strong"> for shocking or violent words.
+- Use <prosody rate="slow" pitch="-15%"> [creepy text here] </prosody> when explaining dark, creeping details or a terrifying conclusion.
+Keep the `clean_text` completely free of XML/SSML tags.
 
 Return ONLY valid JSON exactly matching this format:
 {json_template}
 """
+
     
     config = types.GenerateContentConfig(temperature=0.9, top_p=0.95, response_mime_type="application/json")
     
