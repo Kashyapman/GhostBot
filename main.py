@@ -177,7 +177,7 @@ def generate_viral_script(fallback_sota_model):
 }
 '''
 
-        prompt = f"""
+    prompt = f"""
 You are an elite viral YouTube Shorts writer and an Award-Winning Voice Director.
 Channel: "The Glitch Archive" (dark, eerie historical true crime/mysteries).
 CATEGORY: {niche}
@@ -203,7 +203,6 @@ Keep the `clean_text` completely free of XML/SSML tags.
 Return ONLY valid JSON exactly matching this format:
 {json_template}
 """
-
     
     config = types.GenerateContentConfig(temperature=0.9, top_p=0.95, response_mime_type="application/json")
     
@@ -246,23 +245,37 @@ def generate_cinematographer_prompts(full_script_text, required_images, sota_mod
   "visuals": [
     {
       "search_query": "1977 Southern Television broadcast real photo",
-      "ai_prompt": "A glowing CRT television in a pitch black 1970s living room, eerie green glow, photorealistic, 8k, volumetric lighting"
+      "ai_prompt": "A glowing CRT television in a pitch black 1970s living room, eerie green glow, photorealistic, 8k, volumetric lighting, vertical composition"
     }
   ]
 }
 '''
 
     prompt = f"""
-You are an elite Cinematographer for a True Crime / Mystery YouTube Shorts channel.
-Here is the voiceover script for our new video:
+You are an elite Cinematographer and Lead Visual Researcher for a True Crime / Mystery YouTube Shorts channel.
+Your job is to perfectly map sequential visuals to the following voiceover script.
+
+SCRIPT:
 "{full_script_text}"
 
-The final audio track is already recorded. To perfectly pace the video, we need EXACTLY {required_images} visual transitions. 
-For each of the {required_images} scenes, you must provide two things:
-1. 'search_query': A very specific, real-world DuckDuckGo Image search term (e.g. "Max Headroom broadcast 1987 original photo").
-2. 'ai_prompt': A highly detailed, photorealistic Midjourney-style prompt as a fallback if the real photo isn't found.
+We need EXACTLY {required_images} visual transitions to pace the video perfectly. 
+For each scene, provide a real-world search query AND an AI-generation fallback.
 
-Provide EXACTLY {required_images} items in a JSON array. Return ONLY valid JSON matching this format:
+RULE 1: 'search_query' (Optimized for DuckDuckGo / Archives)
+- Must be highly specific, literal, and noun-heavy.
+- DO NOT use abstract adjectives like "creepy", "scary", or "mysterious". Search engines look for actual objects and places.
+- Include specific years, locations, or historical names when possible.
+- Good: "1948 Somerton beach police crime scene photo"
+- Bad: "Creepy man found dead on beach mystery"
+
+RULE 2: 'ai_prompt' (Optimized for FLUX.1 AI Generator)
+- Must be a highly detailed, Midjourney v6 style prompt.
+- Specify lighting (e.g., volumetric lighting, harsh shadows, eerie glow), camera angle, and atmosphere.
+- MUST include "vertical composition, centered framing" since this is for a 9:16 YouTube Short.
+- NEVER ask for text, words, documents with writing, or signs in the image (AI text generation looks like gibberish).
+- Good: "A vintage 1970s CRT television sitting on a wooden desk in a pitch black room, glowing with harsh static, eerie volumetric lighting, dark cinematic, true crime documentary style, 8k, vertical composition"
+
+Provide EXACTLY {required_images} items. Return ONLY valid JSON matching this format:
 {json_template}
 """
     
@@ -283,7 +296,7 @@ Provide EXACTLY {required_images} items in a JSON array. Return ONLY valid JSON 
             
             while len(visuals) < required_images:
                 print("⚠️ Cinematographer array too short. Appending safety fallback.")
-                visuals.append({"search_query": "creepy mystery historical evidence", "ai_prompt": "Dark cinematic mystery background, true crime, 8k"})
+                visuals.append({"search_query": "historical true crime evidence photo", "ai_prompt": "Dark cinematic mystery background, true crime documentary style, 8k, vertical composition"})
             
             return visuals[:required_images]
         else:
@@ -293,7 +306,7 @@ Provide EXACTLY {required_images} items in a JSON array. Return ONLY valid JSON 
         print(f"❌ Cinematographer execution error: {e}")
         
     print("🚨 Generating emergency visual prompts to prevent pipeline crash.")
-    return [{"search_query": "mystery evidence photo", "ai_prompt": "dark cinematic eerie background 8k"} for _ in range(required_images)]
+    return [{"search_query": "historical mystery evidence photo", "ai_prompt": "dark cinematic eerie background 8k, vertical composition"} for _ in range(required_images)]
 
 # ================== 4-LAYER TITANIUM PIPELINE ==================
 def fetch_ddg_image(prompt, filename):
@@ -649,7 +662,8 @@ if __name__ == "__main__":
     video_path, metadata, global_sota = main_pipeline()
     if video_path and metadata and global_sota:
         if upload_to_youtube(video_path, metadata):
-            save_new_topic(metadata.get('case_name', metadata['title']))
+            case_name = metadata.get('case_name', metadata.get('title', 'Unknown Case'))
+            save_new_topic(case_name)
             
             # The Marketer is also powered by the Global SOTA
             meta_caption = generate_meta_caption(metadata, global_sota)
