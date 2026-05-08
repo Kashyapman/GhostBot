@@ -12,4 +12,4 @@ faster-whisper
 opencv-python-headless
 imageio[ffmpeg]
 imageio[pyav]
-duckduckgo-search
+transformers
