@@ -1,4 +1,5 @@
 name: Daily GhostBot Upload
+
 on:
   schedule:
     - cron: '0 6,18 * * *'
@@ -6,12 +7,13 @@ on:
 
 concurrency:
   group: ghostbot-upload
-  cancel-in-progress: false
+  cancel-in-progress: false 
 
 jobs:
   run_bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 360 
+    
     permissions:
       contents: write
 
@@ -30,21 +32,23 @@ jobs:
       - name: Install System Dependencies & Fix Permissions
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libsndfile1 sox imagemagick fonts-liberation ghostscript \
-                                   libwebp-dev libjpeg-dev zlib1g-dev libfreetype6-dev
+          sudo apt-get install -y ffmpeg libsndfile1 sox imagemagick fonts-liberation ghostscript
           
-          # BRUTE FORCE FIX: Remove ImageMagick policy completely to allow MoviePy text rendering
-          sudo rm -f /etc/ImageMagick-6/policy.xml
+          # Loosens ImageMagick security policies to prevent MoviePy text/image generation crashes
+          sudo sed -i '/<policy domain="path" rights="none" pattern="@\*"/d' /etc/ImageMagick-6/policy.xml || true
           
-          mkdir -p assets temp images downloads sfx music
-          chmod -R 777 assets temp images downloads sfx music
+          # Prevents Error 13 (Permission denied) when saving dynamic assets
+          # Creates standard directories the script might use for the new visual approach and grants full read/write access.
+          mkdir -p assets temp images downloads
+          chmod -R 777 assets temp images downloads
 
       - name: Install Python Libraries
         run: |
           python -m pip install --upgrade pip
           pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
           
-          pip install google-api-python-client requests Pillow scipy moviepy opencv-python-headless imageio[ffmpeg] imageio[pyav]
+          # Ensures libraries required for the new dynamic visual effects are explicitly installed
+          pip install google-api-python-client requests Pillow scipy moviepy
           
           pip install -r requirements.txt
 
@@ -57,42 +61,26 @@ jobs:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          # Phase 1: Added Pixabay Key for the Dynamic Audio Engine
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          # Added required secrets for fetching historical evidence via Google Custom Search
           SEARCH_API_KEY: ${{ secrets.SEARCH_API_KEY }}
           GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
-          # THE TITANIUM PIPELINE SECRETS
-          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: python main.py
-
-      - name: Debug Visuals (Verify Image Downloads)
-        if: always()
-        run: |
-          echo "=== CHECKING DOWNLOADED/GENERATED IMAGES ==="
-          ls -lh temp_img_*.jpg 2>/dev/null || echo "No temp images found"
-          
-          echo "=== CHECKING FILE TYPES ==="
-          file temp_img_*.jpg 2>/dev/null || true
-          
-          echo "=== CHECKING IMAGE SIZES ==="
-          for img in temp_img_*.jpg; do
-            if [ -f "$img" ]; then
-              size=$(stat -c%s "$img" 2>/dev/null)
-              echo "$img: $size bytes"
-            fi
-          done
 
       - name: Commit and Push Memory Bank Updates
         if: success()
         run: |
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com" 
           git add topics.txt
           
           if git diff --staged --quiet; then
             echo "No changes in topics.txt to commit."
           else
             git commit -m "chore: update topics memory bank [skip ci]"
-            git pull --rebase origin main || true
+            git pull --rebase origin main || true 
             git push
           fi
