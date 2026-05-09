@@ -480,9 +480,11 @@ def generate_depth_map(image_path):
     """Uses a lightweight local AI model to figure out what is close and what is far away."""
     print(f"🧠 Phase 3: Generating Depth Map for {image_path}...")
     try:
-        depth_estimator = pipeline(task="depth-estimation", model="depth-anything/Depth-Anything-V2-Small", device="cpu")
+        depth_estimator = pipeline(task="depth-estimation", model="depth-anything/Depth-Anything-V2-Small-hf", device="cpu")
+        
         img = PIL.Image.open(image_path).convert("RGB")
         prediction = depth_estimator(img)
+        
         depth_path = image_path.replace(".jpg", "_depth.jpg")
         prediction["depth"].save(depth_path)
         return depth_path
