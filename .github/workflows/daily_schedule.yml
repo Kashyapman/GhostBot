@@ -32,13 +32,16 @@ jobs:
       - name: Install System Dependencies & Fix Permissions
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libsndfile1 sox imagemagick fonts-liberation ghostscript
+          
+          # CRITICAL FIX RESTORED: Added libwebp-dev, libjpeg-dev, zlib1g-dev, libfreetype6-dev
+          # These are required by Pillow and OpenCV in Phase 2 & 3 to prevent black screens/crashes.
+          sudo apt-get install -y ffmpeg libsndfile1 sox imagemagick fonts-liberation ghostscript \
+                                  libwebp-dev libjpeg-dev zlib1g-dev libfreetype6-dev
           
           # Loosens ImageMagick security policies to prevent MoviePy text/image generation crashes
           sudo sed -i '/<policy domain="path" rights="none" pattern="@\*"/d' /etc/ImageMagick-6/policy.xml || true
           
           # Prevents Error 13 (Permission denied) when saving dynamic assets
-          # Creates standard directories the script might use for the new visual approach and grants full read/write access.
           mkdir -p assets temp images downloads
           chmod -R 777 assets temp images downloads
 
@@ -47,8 +50,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
           
-          # Ensures libraries required for the new dynamic visual effects are explicitly installed
-          pip install google-api-python-client requests Pillow scipy moviepy
+          # CRITICAL FIX: Explicitly installing the Phase 3 libraries (transformers, opencv, imageio) 
+          # to guarantee the Parallax engine works flawlessly.
+          pip install google-api-python-client requests Pillow scipy moviepy \
+                      opencv-python-headless imageio[ffmpeg] imageio[pyav] transformers
           
           pip install -r requirements.txt
 
@@ -61,14 +66,19 @@ jobs:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
-          # Phase 1: Added Pixabay Key for the Dynamic Audio Engine
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          # Added required secrets for fetching historical evidence via Google Custom Search
           SEARCH_API_KEY: ${{ secrets.SEARCH_API_KEY }}
           GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: python main.py
+
+      - name: Debug Visuals (Verify Image Downloads)
+        if: always()
+        run: |
+          echo "=== CHECKING DOWNLOADED/GENERATED IMAGES ==="
+          ls -la assets temp images downloads 2>/dev/null || true
+          file assets/* temp/* images/* downloads/* 2>/dev/null || true
 
       - name: Commit and Push Memory Bank Updates
         if: success()
