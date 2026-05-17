@@ -51,7 +51,7 @@ def get_style_silence(style_instruction: str) -> int:
 
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing Gemini Master-Director Engine v2.0...")
+        print("🎚️ Initializing Gemini Master-Director Engine v2.1...")
 
         self.api_key = os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
@@ -63,7 +63,7 @@ class VoiceEngine:
     # PROFESSIONAL 5-STAGE MASTERING CHAIN
     # Upgraded from flat low-pass + compression to full EQ → dynamics → normalize
     # ----------------------------------------------------------
-    def _podcast_mastering(self, sound: AudioSegment, style_instruction: str = "default") -> AudioSegment:
+    def _podcast_mastering(self, sound: AudioSegment, style_instruction: str = "default", clean_text: str | None = None) -> AudioSegment:
         """
         Stage 1 — High-Pass Filter (80Hz):
             Removes low-frequency room rumble and mic handling noise.
@@ -106,6 +106,24 @@ class VoiceEngine:
 
         # Stage 5 — style-aware silence
         silence_ms = get_style_silence(style_instruction)
+
+        # Tiny punctuation-aware tail so questions and reveals breathe naturally.
+        if clean_text:
+            tail = clean_text.strip()
+            if tail.endswith("..."):
+                silence_ms += 160
+            elif tail.endswith("?"):
+                silence_ms += 110
+            elif tail.endswith("!"):
+                silence_ms += 70
+            elif "—" in tail or "-" in tail:
+                silence_ms += 40
+
+            # Fast factual lines should not linger too long.
+            word_count = len(tail.split())
+            if word_count <= 6:
+                silence_ms = max(80, silence_ms - 40)
+
         silence = AudioSegment.silent(duration=silence_ms)
         sound = sound + silence
 
@@ -167,8 +185,8 @@ The script uses SSML tags as stage directions. DO NOT speak the tag text aloud. 
 RECORDING ENVIRONMENT:
 You are in a quiet, slightly reverberant late-night radio studio.
 Your voice has natural room presence. You are NOT in a dead anechoic booth.
-Bring gravitas. Bring humanity. The listener must feel this is a real person 
-who has spent years investigating this case.
+Bring gravitas. Bring humanity. Keep the last clause leaning forward, as if the next line matters.
+The listener must feel this is a real person who has spent years investigating this case.
 
 SCRIPT LINE TO PERFORM:
 {acting_text}"""
@@ -205,7 +223,7 @@ SCRIPT LINE TO PERFORM:
 
                     # Load → master → export
                     sound = AudioSegment.from_file(temp_raw)
-                    sound = self._podcast_mastering(sound, style_instruction)
+                    sound = self._podcast_mastering(sound, style_instruction, clean_text=clean_text)
                     sound.export(filename, format="wav")
 
                     if os.path.exists(temp_raw):
