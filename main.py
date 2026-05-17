@@ -1090,7 +1090,6 @@ def get_subtitle_font(size: int = 60):
                 continue
     return PIL.ImageFont.load_default()
 
-
 def make_karaoke_frame(
     words: list[dict],
     active_idx: int,
@@ -1098,51 +1097,72 @@ def make_karaoke_frame(
 ) -> PIL.Image.Image:
     """
     Renders a transparent (RGBA) PIL frame.
-      Active word  → bright yellow (#FFE600), font size 66, full opacity
-      Other words  → white, font size 54, 65% opacity
-    Black outline on all words for legibility over any background.
+    FIXED: Dynamically shrinks font size to prevent overlapping, 
+    and uses native stroke for crisp, readable text.
     """
-    frame_h    = 140
-    img        = PIL.Image.new("RGBA", (video_width, frame_h), (0, 0, 0, 0))
-    draw       = PIL.ImageDraw.Draw(img)
+    frame_h = 160
+    img = PIL.Image.new("RGBA", (video_width, frame_h), (0, 0, 0, 0))
+    draw = PIL.ImageDraw.Draw(img)
 
-    fn_normal  = get_subtitle_font(54)
-    fn_active  = get_subtitle_font(66)
+    # Base font sizes (Made larger and cleaner)
+    norm_size = 54
+    act_size = 68
 
-    # Pre-calculate widths with a trailing space
-    widths     = []
-    total_w    = 0
-    for i, w in enumerate(words):
-        fn    = fn_active if i == active_idx else fn_normal
-        bbox  = draw.textbbox((0, 0), w["word"] + " ", font=fn)
-        ww    = bbox[2] - bbox[0]
-        widths.append(ww)
-        total_w += ww
+    fn_normal = get_subtitle_font(norm_size)
+    fn_active = get_subtitle_font(act_size)
 
-    # Clamp to video width with padding
+    # Helper to calculate the width of the current phrase
+    def get_widths(f_norm, f_act):
+        w_list = []
+        for i, w in enumerate(words):
+            fn = f_act if i == active_idx else f_norm
+            bbox = draw.textbbox((0, 0), w["word"] + " ", font=fn)
+            w_list.append(bbox[2] - bbox[0])
+        return w_list
+
+    widths = get_widths(fn_normal, fn_active)
+    total_w = sum(widths)
+
+    # CRITICAL FIX: If text is too wide, physically shrink the font size 
+    # instead of overlapping the letters.
     max_w = video_width - 40
-    if total_w > max_w:
-        scale  = max_w / total_w
-        widths = [int(w * scale) for w in widths]
+    while total_w > max_w and norm_size > 24:
+        norm_size -= 2
+        act_size -= 2
+        fn_normal = get_subtitle_font(norm_size)
+        fn_active = get_subtitle_font(act_size)
+        widths = get_widths(fn_normal, fn_active)
         total_w = sum(widths)
 
     x = (video_width - total_w) // 2
 
     for i, w in enumerate(words):
-        is_active  = (i == active_idx)
-        fn         = fn_active  if is_active else fn_normal
-        fill       = (255, 230, 0, 255) if is_active else (255, 255, 255, 165)
-        y          = (frame_h - (66 if is_active else 54)) // 2
+        is_active = (i == active_idx)
+        fn = fn_active if is_active else fn_normal
+        
+        # Un-active words are slightly transparent white, Active word is bold Yellow
+        fill = (255, 230, 0, 255) if is_active else (255, 255, 255, 210)
+        
+        # Align bottom so words don't jump up and down awkwardly
+        bbox = draw.textbbox((0, 0), w["word"], font=fn)
+        text_h = bbox[3] - bbox[1]
+        
+        # Add a slight upward pop to the active word
+        y = (frame_h - text_h) // 2 + (6 if not is_active else 0) 
 
-        # Stroke (8-directional black outline)
-        for dx, dy in [(-2,2),(2,2),(-2,-2),(2,-2),(0,3),(0,-3),(3,0),(-3,0)]:
-            draw.text((x + dx, y + dy), w["word"], font=fn, fill=(0, 0, 0, 210))
-
-        draw.text((x, y), w["word"], font=fn, fill=fill)
+        # CRITICAL FIX: Draw using Pillow's native, high-quality stroke instead of 8 messy loops
+        draw.text(
+            (x, y), 
+            w["word"], 
+            font=fn, 
+            fill=fill, 
+            stroke_width=5 if is_active else 3, 
+            stroke_fill=(0, 0, 0, 255)
+        )
+        
         x += widths[i]
 
     return img
-
 
 def _pil_rgba_to_moviepy(pil_image: PIL.Image.Image, duration: float):
     """Converts a PIL RGBA image to a MoviePy clip with alpha mask."""
@@ -1152,15 +1172,14 @@ def _pil_rgba_to_moviepy(pil_image: PIL.Image.Image, duration: float):
     mask      = ImageClip(alpha_arr, ismask=True, duration=duration)
     return clip.set_mask(mask)
 
-
 def add_dynamic_subtitles(video_clip, audio_path: str):
     """
     Netflix-style karaoke subtitles.
-    Groups words into phrases of 5, shows the full phrase,
-    highlights the active word in yellow as it is spoken.
     """
     print("📝 Generating karaoke subtitles...")
-    PHRASE_SIZE = 5
+    
+    # CRITICAL FIX: Reduced from 5 to 3 for vertical Shorts (prevents clutter)
+    PHRASE_SIZE = 3 
 
     try:
         model       = WhisperModel("tiny", device="cpu", compute_type="int8")
@@ -1188,7 +1207,9 @@ def add_dynamic_subtitles(video_clip, audio_path: str):
         ]
 
         sub_clips  = []
-        sub_y      = int(video_clip.h * 0.72)
+        
+        # Moved slightly up (from 0.72 to 0.68) so TikTok/YT captions don't block it
+        sub_y      = int(video_clip.h * 0.68) 
 
         for phrase_words in phrases:
             for active_idx, word_info in enumerate(phrase_words):
@@ -1216,7 +1237,7 @@ def add_dynamic_subtitles(video_clip, audio_path: str):
                         if not clean: continue
                         try:
                             tc = (TextClip(clean, fontsize=70, color="yellow",
-                                           stroke_color="black", stroke_width=2,
+                                           stroke_color="black", stroke_width=4,
                                            font="Impact", method="caption",
                                            size=(video_clip.w * 0.9, None))
                                   .set_start(word.start).set_end(word.end)
