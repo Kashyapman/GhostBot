@@ -17,7 +17,7 @@ Upgrades vs v1:
   +   Cinematic Stingers          — keyword-triggered impact SFX at key narrative beats
 """
 
-import os, random, time, json, glob, math, base64, urllib.parse
+import os, random, time, json, glob, math, base64, urllib.parse, re
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -44,7 +44,7 @@ from googleapiclient.http import MediaFileUpload
 
 import requests
 
-from neural_voice import VoiceEngine, VOICE_MAP
+from neural_voice_upgraded import VoiceEngine, VOICE_MAP
 import meta_upload
 
 # ─────────────────────────────────────────────────────────
@@ -178,6 +178,188 @@ def save_new_topic(case_name: str):
 # ═══════════════════════════════════════════════════════════
 #  GLOBAL SOTA INTELLIGENCE — self-selecting best free model
 # ═══════════════════════════════════════════════════════════
+
+CHANNEL_MEMORY_FILE = "channel_memory.json"
+
+def _clean_text_snippet(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip())
+
+def _score_title_candidate(title: str, case_name: str = "") -> int:
+    """
+    Scores a title for curiosity, brevity, and spoiler avoidance.
+    """
+    t = _clean_text_snippet(title)
+    tl = t.lower()
+    score = 0
+
+    if not t:
+        return -999
+
+    # Length sweet spot for Shorts
+    if 28 <= len(t) <= 44:
+        score += 6
+    elif len(t) <= 50:
+        score += 3
+    else:
+        score -= 3
+
+    # Curiosity-gap language
+    curiosity_terms = [
+        "what", "why", "how", "didn't exist", "vanished", "missing",
+        "found", "unanswered", "unknown", "no name", "no identity",
+        "disappeared", "untold", "the man", "the woman"
+    ]
+    if any(term in tl for term in curiosity_terms):
+        score += 4
+
+    # Spoiler penalty
+    spoiler_terms = [
+        "explained", "answered", "solved", "mystery explained", "case file",
+        "full story", "timeline", "inside", "complete"
+    ]
+    if any(term in tl for term in spoiler_terms):
+        score -= 5
+
+    # Avoid directly repeating the case name
+    if case_name and case_name.lower() in tl:
+        score -= 4
+
+    # Strong first token / clean punctuation
+    if not any(ch in t for ch in [":", "-", "|"]):
+        score += 1
+
+    # Slight reward for being specific but not too obvious
+    if any(term in tl for term in ["man", "woman", "boy", "girl", "file", "body", "note"]):
+        score += 1
+
+    return score
+
+
+def _pick_best_title(candidates: list[str], case_name: str = "") -> str:
+    clean = []
+    for cand in candidates:
+        c = _clean_text_snippet(cand).strip('"').strip("'")
+        if c and c not in clean:
+            clean.append(c)
+
+    if not clean:
+        return "They found WHAT?"
+
+    return max(clean, key=lambda t: _score_title_candidate(t, case_name))
+
+
+def build_retention_profile(script_data: dict, case_name: str = "") -> dict:
+    """
+    Annotates the script with beat-level intent without changing the core story.
+    """
+    lines = script_data.get("lines", []) if isinstance(script_data, dict) else []
+    n = len(lines)
+    if n == 0:
+        return {"beats": [], "case_name": case_name or script_data.get("case_name", "") if isinstance(script_data, dict) else ""}
+
+    if n == 1:
+        beats = ["hook"]
+    elif n == 2:
+        beats = ["hook", "loop"]
+    elif n == 3:
+        beats = ["hook", "contradiction", "loop"]
+    elif n <= 5:
+        beats = ["hook"] + ["escalation"] * max(0, n - 2) + ["loop"]
+    else:
+        beats = []
+        mid_start = max(2, n - 4)
+        for i in range(n):
+            if i == 0:
+                beats.append("hook")
+            elif i in (1, 2, 3):
+                beats.append("escalation")
+            elif i in (mid_start, mid_start + 1):
+                beats.append("contradiction")
+            elif i == n - 1:
+                beats.append("loop")
+            else:
+                beats.append("escalation")
+
+    speaker_fallback = []
+    if n == 1:
+        speaker_fallback = ["narrator"]
+    elif n == 2:
+        speaker_fallback = ["narrator", "witness"]
+    else:
+        speaker_fallback = []
+        for i in range(n):
+            if i == 0 or i == n - 1:
+                speaker_fallback.append("narrator")
+            elif i in (max(1, n // 2 - 1), max(2, n // 2)):
+                speaker_fallback.append("document")
+            elif i in (max(1, n // 2),):
+                speaker_fallback.append("witness")
+            else:
+                speaker_fallback.append("narrator")
+
+    style_defaults = {
+        "hook": "Hushed, immediate, impossible.",
+        "escalation": "Tight, escalating, factual.",
+        "contradiction": "Cold, documentary, evidentiary.",
+        "loop": "Quiet, unresolved, haunting.",
+    }
+
+    for i, line in enumerate(lines):
+        if not isinstance(line, dict):
+            continue
+
+        clean = _clean_text_snippet(line.get("clean_text", ""))
+        acting = _clean_text_snippet(line.get("acting_text", clean))
+        style = _clean_text_snippet(line.get("style_instruction", ""))
+
+        line["clean_text"] = clean
+        line["acting_text"] = acting
+        line["style_instruction"] = style or style_defaults.get(beats[i], "Measured, authoritative.")
+
+        speaker = _clean_text_snippet(line.get("speaker", "")).lower()
+        if speaker not in {"narrator", "witness", "document", "reporter"}:
+            line["speaker"] = speaker_fallback[i]
+
+        line["beat"] = beats[i]
+
+    script_data["lines"] = lines
+    script_data["retention_profile"] = {
+        "case_name": case_name or script_data.get("case_name", ""),
+        "beat_count": n,
+        "hook": "line_1_immediate_interrupt",
+        "middle": "contradiction_to_witness_evidence",
+        "end": "loop_back_to_opening_question",
+    }
+
+    if case_name and not script_data.get("case_name"):
+        script_data["case_name"] = case_name
+
+    return script_data
+
+
+def load_channel_memory() -> list[dict]:
+    if not os.path.exists(CHANNEL_MEMORY_FILE):
+        return []
+    try:
+        with open(CHANNEL_MEMORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def record_run_memory(entry: dict) -> None:
+    try:
+        memory = load_channel_memory()
+        memory.append(entry)
+        memory = memory[-200:]
+        with open(CHANNEL_MEMORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(memory, f, indent=2, ensure_ascii=False)
+        print("💾 Saved run memory.")
+    except Exception as e:
+        print(f"⚠️  Could not save run memory: {e}")
+
+
 def get_top_free_openrouter_models(limit: int = 3) -> list[str]:
     print("🔍 Scouting OpenRouter for top SOTA free models...")
     defaults = [
@@ -397,6 +579,7 @@ Requirements:
 #  UPGRADE 2 + 3 + 4 + 5 — THE WRITER
 #  Research-grounded · Channel persona · Multi-draft · Dual voice
 # ═══════════════════════════════════════════════════════════
+
 def generate_viral_script(sota_models: list[str]) -> dict | None:
     print("🧠 Phase 1 Writer: Research → Draft → Refine...")
 
@@ -412,14 +595,13 @@ def generate_viral_script(sota_models: list[str]) -> dict | None:
         "Government Cover-Ups That Were Later Confirmed",
         "Serial Cases That Stopped Overnight With No Explanation",
     ]
-    niche       = random.choice(content_pool)
+    niche = random.choice(content_pool)
     past_topics = get_past_topics()
 
     case_name, research_brief, era = propose_case_and_research(
         niche, past_topics, sota_models
     )
 
-    # ── JSON template shown to the model as a formatting guide ──
     template = """{
   "case_name": "The Tamam Shud Case",
   "era": "1940s-1960s",
@@ -446,12 +628,13 @@ def generate_viral_script(sota_models: list[str]) -> dict | None:
   ]
 }"""
 
-    # ── STAGE 1: Full research-grounded write ──
     stage1_prompt = f"""
-You are the writer for "COLD CASE ARCHIVE" — a YouTube Shorts channel run by a former homicide detective 
-turned investigative journalist. Your voice is world-weary, precise, and quietly furious.
+You are the writer for "COLD CASE ARCHIVE" — a YouTube Shorts channel run by a former homicide detective turned investigative journalist.
+Your voice is world-weary, precise, and quietly furious.
 You do not sensationalize. You state facts and let the horror speak for itself.
-You frequently expose what investigators got WRONG and what witness accounts directly contradicted official reports.
+You expose what investigators got WRONG and what witness accounts directly contradicted official reports.
+
+CASE NAME TO CENTER: {case_name}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESEARCH BRIEF — THIS IS YOUR ONLY SOURCE:
@@ -462,11 +645,11 @@ BANNED CASES (do NOT write about these):
 {past_topics if past_topics else "(none yet)"}
 
 ━━━━ PSYCHOLOGICAL PACING RULES ━━━━
-LINE 1  — PATTERN INTERRUPT: The single most impossible or horrifying confirmed fact. No intro. No welcome.
-LINES 2–5 — ESCALATION: Short, punchy, rapid. Tighten the vice line by line.
+LINE 1  — PATTERN INTERRUPT: Open with the single most impossible confirmed fact. Add the human cost or consequence if it sharpens the hook. No intro.
+LINES 2–5 — ESCALATION: Short, punchy, increasingly specific. Every line must add new information.
 LINES 6–8 — THE CONTRADICTION (MANDATORY): State what official records said. Immediately follow with what witnesses or physical evidence actually showed. This is why it was never solved.
-LINES 9–10 — THE IMPOSSIBLE DETAIL: The one fact that defied forensic logic, physics, or all expert explanation.
-FINAL LINE — PERFECT LOOP: The last sentence must grammatically and thematically circle back to the first word of Line 1.
+LINES 9–10 — THE IMPOSSIBLE DETAIL: The fact that defied forensic logic, physics, or all expert explanation.
+FINAL LINE — PERFECT LOOP: Circle back to the first word, image, or emotional wound from Line 1.
 
 ━━━━ MULTI-VOICE DIRECTION ━━━━
 Use "speaker" field to assign each line one of these voices:
@@ -475,11 +658,12 @@ Use "speaker" field to assign each line one of these voices:
   "witness"   — quoting what investigators, witnesses, or experts actually said (personal, stunned)
 Use each voice at least once. Never use "document" twice in a row.
 
-━━━━ SSML ACTING TAGS ━━━━  (inside acting_text only — never in clean_text)
-  <break time="1s"/>                     pause before a key reveal
-  <emphasis level="strong">WORD</emphasis>   hit this word hard
-  <prosody rate="slow" pitch="-15%">     maximum dread, slow delivery
-  <prosody rate="fast">                  rapid factual escalation
+━━━━ SSML ACTING TAGS ━━━━ (inside acting_text only — never in clean_text)
+  <break time="1s"/>                       pause before a reveal
+  <emphasis level="strong">WORD</emphasis> hit the word hard without shouting
+  <prosody rate="slow" pitch="-15%">       maximum dread, slower delivery
+  <prosody rate="fast">                    rapid factual escalation
+Use micro-pauses before contradiction lines and on the final reveal.
 
 ━━━━ BANNED CLICHÉS ━━━━
 "Dive into" / "chilling reminder" / "Some say" / "Will we ever know?" / "Buckle up" / "In the annals of history"
@@ -488,6 +672,9 @@ Use each voice at least once. Never use "document" twice in a row.
 - combined clean_text word count: 130–160 words
 - 8 to 12 total line objects
 - era field must be: "{era}"
+- First line must feel immediate and specific, never generic.
+- Prefer concrete nouns, dates, locations, evidence, and witness language.
+- Keep the final line haunting and circular, not explanatory.
 
 Return ONLY valid JSON exactly matching this format:
 {template}
@@ -500,7 +687,6 @@ Return ONLY valid JSON exactly matching this format:
 
     script_data = None
 
-    # Gemini Pro first
     try:
         rsp = client.models.generate_content(
             model="models/gemini-2.5-pro", contents=stage1_prompt, config=json_config
@@ -510,7 +696,6 @@ Return ONLY valid JSON exactly matching this format:
     except Exception as e:
         print(f"⚠️  Gemini Pro failed: {e}")
 
-    # OpenRouter fallback cascade
     if not script_data and OPENROUTER_KEY:
         headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
         for model in sota_models:
@@ -533,7 +718,6 @@ Return ONLY valid JSON exactly matching this format:
             except Exception:
                 time.sleep(5)
 
-    # Gemini Flash final fallback
     if not script_data:
         try:
             rsp = client.models.generate_content(
@@ -545,11 +729,10 @@ Return ONLY valid JSON exactly matching this format:
             print(f"❌ All writers failed: {e}")
             return None
 
-    # ── STAGE 2: Cinematic Refinement Pass ──
     if script_data and script_data.get("lines"):
         print("✏️  Stage 2: Refinement Pass...")
         raw_lines = "\n".join(
-            f"[{l.get('speaker','narrator')}]: {l.get('clean_text','')}"
+            f"[{l.get('speaker', 'narrator')}]: {l.get('clean_text', '')}"
             for l in script_data["lines"]
         )
         refine_prompt = f"""You are a veteran documentary script editor.
@@ -559,10 +742,11 @@ FIRST DRAFT:
 {raw_lines}
 
 EDITING RULES:
-1. Find and rewrite the ONE weakest, most generic sentence — make it visceral and specific.
-2. If "The" starts more than two consecutive sentences, vary those openers.
-3. Ensure the final line loops back to the first word or concept of the opening line.
-4. Do NOT change speaker assignments or total word count by more than ±12 words.
+1. Rewrite the weakest or most generic sentence to be more visceral and specific.
+2. Keep the opening immediate; if the first line feels abstract, compress it.
+3. Preserve speaker assignments and the contradiction structure.
+4. Ensure the final line loops back to the first word or concept of the opening line.
+5. Keep total word count within ±12 words of the original draft.
 
 Return ONLY a numbered list of revised clean_text lines:
 1. [revised line]
@@ -582,16 +766,19 @@ Return ONLY a numbered list of revised clean_text lines:
                         script_data["lines"][i]["clean_text"] = clean
         print("✅ Stage 2 complete")
 
-    # Inject era if missing
     if "era" not in script_data:
         script_data["era"] = era
+    if "case_name" not in script_data:
+        script_data["case_name"] = case_name
 
+    script_data = normalize_script_for_retention(script_data, case_name=case_name)
     return script_data
 
 
 # ═══════════════════════════════════════════════════════════
 #  UPGRADE 6 — ERA-MATCHED CINEMATOGRAPHER
 # ═══════════════════════════════════════════════════════════
+
 def generate_cinematographer_prompts(
     script_text: str,
     required_images: int,
@@ -602,9 +789,14 @@ def generate_cinematographer_prompts(
 
     fallback_vis = {
         "search_query": "historical crime evidence",
+        "hero_object": "redacted document",
+        "shot_type": "Close-Up",
+        "camera_motion": "slow push-in",
+        "motion_cue": "still frame with tension",
         "ai_prompt": (
             f"Dark cinematic mystery scene, documentary style, volumetric lighting, "
-            f"vertical composition, {era_texture}"
+            f"vertical composition, a clear hero object in frame, realistic documentary archive feel, "
+            f"{era_texture}"
         ),
     }
 
@@ -612,7 +804,11 @@ def generate_cinematographer_prompts(
   "visuals": [
     {
       "search_query": "Somerton beach 1948",
-      "ai_prompt": "Extreme close-up worn leather wallet detective desk, harsh desk lamp, aged 35mm film, film halation, dust on lens, yellowed, non-uniform grain, cinematic, vertical, 1940s-1960s film texture"
+      "hero_object": "worn leather wallet",
+      "shot_type": "Extreme Close-Up",
+      "camera_motion": "slow push-in",
+      "motion_cue": "hands enter frame with caution",
+      "ai_prompt": "Extreme close-up worn leather wallet on detective desk, harsh desk lamp, aged 35mm film, film halation, dust on lens, yellowed, non-uniform grain, cinematic, vertical, 1940s-1960s film texture"
     }
   ]
 }"""
@@ -627,20 +823,33 @@ ERA OF THIS CASE: {era}
 MANDATORY TEXTURE FOR EVERY AI PROMPT — append this to every ai_prompt:
 "{era_texture}"
 
-RULE 1 — search_query (for real archive/Wikipedia evidence):
-  - 2 to 4 keywords. Concrete nouns only: names, dates, specific objects.
-  - GOOD: "Somerton Man 1948"   BAD: "Dead man mysterious beach"
-
-RULE 2 — ai_prompt (for FLUX.1 cinematic B-Roll):
-  - Frame with DIEGETIC objects in PHYSICAL spaces — no floating abstractions.
-  - ALTERNATE shot types every clip: Extreme Close-Up → Wide Establishing → Over-the-Shoulder → Dutch Angle.
-  - BANNED: any legible text, signs, numbers. Use "blurred handwriting" or "redacted document" instead.
-  - ALWAYS append the ERA TEXTURE from above.
-  - Each shot must look like it was pulled from a real documentary archive.
+SHOT DESIGN RULES:
+- Every visual must carry one clear hero object.
+- Rotate shot types naturally: Extreme Close-Up, Wide Establishing, Over-the-Shoulder, Dutch Angle.
+- Every prompt must include a camera distance cue and a motion cue.
+- Keep the frame grounded in physical spaces, not abstract symbolism.
+- BANNED: legible text, signs, numbers, captions, or interface overlays.
+- Prefer concrete evidence: notes, doors, windows, folders, gloves, tape, rooms, roads.
+- Search queries must be 2 to 4 keywords only, concrete nouns only.
 
 Return ONLY valid JSON with EXACTLY {required_images} items:
 {template}
 """
+
+    def _normalize_visual(item: dict, idx: int) -> dict:
+        if not isinstance(item, dict):
+            item = {}
+        item.setdefault("search_query", "historical crime evidence")
+        item.setdefault("hero_object", "redacted document")
+        item.setdefault("shot_type", ["Extreme Close-Up", "Wide Establishing", "Over-the-Shoulder", "Dutch Angle"][idx % 4])
+        item.setdefault("camera_motion", "slow push-in")
+        item.setdefault("motion_cue", "subtle human movement")
+        item.setdefault(
+            "ai_prompt",
+            f"Dark cinematic mystery scene, documentary style, volumetric lighting, vertical composition, "
+            f"{item.get('hero_object', 'redacted document')}, {era_texture}"
+        )
+        return item
 
     if OPENROUTER_KEY:
         headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
@@ -659,13 +868,13 @@ Return ONLY valid JSON with EXACTLY {required_images} items:
                     raw = (r.json()["choices"][0]["message"]["content"]
                            .replace("```json", "").replace("```", "").strip())
                     visuals = json.loads(raw).get("visuals", [])
+                    visuals = [_normalize_visual(v, i) for i, v in enumerate(visuals)]
                     while len(visuals) < required_images:
-                        visuals.append(fallback_vis)
+                        visuals.append(_normalize_visual({}, len(visuals)))
                     return visuals[:required_images]
             except Exception:
                 time.sleep(4)
 
-    # Gemini Flash fallback
     try:
         client = genai.Client(api_key=GEMINI_KEY)
         cfg = types.GenerateContentConfig(
@@ -674,15 +883,16 @@ Return ONLY valid JSON with EXACTLY {required_images} items:
         rsp = client.models.generate_content(
             model="models/gemini-2.5-flash", contents=prompt, config=cfg
         )
-        visuals = (json.loads(rsp.text.replace("```json","").replace("```","").strip())
+        visuals = (json.loads(rsp.text.replace("```json", "").replace("```", "").strip())
                    .get("visuals", []))
+        visuals = [_normalize_visual(v, i) for i, v in enumerate(visuals)]
         while len(visuals) < required_images:
-            visuals.append(fallback_vis)
+            visuals.append(_normalize_visual({}, len(visuals)))
         return visuals[:required_images]
     except Exception as e:
         print(f"❌ Visual prompt generation failed: {e}")
 
-    return [fallback_vis for _ in range(required_images)]
+    return [_normalize_visual({}, i) for i in range(required_images)]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1172,52 +1382,61 @@ def _pil_rgba_to_moviepy(pil_image: PIL.Image.Image, duration: float):
     mask      = ImageClip(alpha_arr, ismask=True, duration=duration)
     return clip.set_mask(mask)
 
+
 def add_dynamic_subtitles(video_clip, audio_path: str):
     """
-    Netflix-style karaoke subtitles.
+    Netflix-style karaoke subtitles with natural phrase breaks.
     """
     print("📝 Generating karaoke subtitles...")
-    
-    # CRITICAL FIX: Reduced from 5 to 3 for vertical Shorts (prevents clutter)
-    PHRASE_SIZE = 3 
 
     try:
-        model       = WhisperModel("tiny", device="cpu", compute_type="int8")
+        model = WhisperModel("tiny", device="cpu", compute_type="int8")
         segments, _ = model.transcribe(audio_path, word_timestamps=True)
 
-        all_words   = []
+        all_words = []
         for seg in segments:
             if seg.words:
                 for word in seg.words:
                     clean = word.word.strip().upper()
                     if clean:
                         all_words.append({
-                            "word":  clean,
+                            "word": clean,
                             "start": word.start,
-                            "end":   word.end,
+                            "end": word.end,
                         })
 
         if not all_words:
             return video_clip
 
-        # Group into phrases
-        phrases = [
-            all_words[i:i + PHRASE_SIZE]
-            for i in range(0, len(all_words), PHRASE_SIZE)
-        ]
+        duration = max(float(getattr(video_clip, "duration", 0.0) or 0.0), all_words[-1]["end"])
+        words_per_second = len(all_words) / max(duration, 1.0)
+        phrase_cap = 2 if words_per_second > 2.8 or duration < 60 else 3
 
-        sub_clips  = []
-        
-        # Moved slightly up (from 0.72 to 0.68) so TikTok/YT captions don't block it
-        sub_y      = int(video_clip.h * 0.68) 
+        # Break on natural pauses or when the phrase cap is reached.
+        phrases = []
+        current = []
+        for word in all_words:
+            if current:
+                gap = word["start"] - current[-1]["end"]
+                if gap > 0.42 or len(current) >= phrase_cap:
+                    phrases.append(current)
+                    current = []
+            current.append(word)
+        if current:
+            phrases.append(current)
+
+        sub_clips = []
+        sub_y = int(video_clip.h * 0.67)
 
         for phrase_words in phrases:
             for active_idx, word_info in enumerate(phrase_words):
                 dur = max(word_info["end"] - word_info["start"], 0.05)
-                pil_frame  = make_karaoke_frame(phrase_words, active_idx, VIDEO_WIDTH)
-                word_clip  = (_pil_rgba_to_moviepy(pil_frame, dur)
-                              .set_start(word_info["start"])
-                              .set_position(("center", sub_y)))
+                pil_frame = make_karaoke_frame(phrase_words, active_idx, VIDEO_WIDTH)
+                word_clip = (
+                    _pil_rgba_to_moviepy(pil_frame, dur)
+                    .set_start(word_info["start"])
+                    .set_position(("center", sub_y))
+                )
                 sub_clips.append(word_clip)
 
         if sub_clips:
@@ -1227,23 +1446,34 @@ def add_dynamic_subtitles(video_clip, audio_path: str):
     except Exception as e:
         print(f"⚠️  Karaoke subtitles failed ({e}) — using basic fallback...")
         try:
-            model       = WhisperModel("tiny", device="cpu", compute_type="int8")
+            model = WhisperModel("tiny", device="cpu", compute_type="int8")
             segments, _ = model.transcribe(audio_path, word_timestamps=True)
-            sub_clips   = []
+            sub_clips = []
             for seg in segments:
                 if seg.words:
                     for word in seg.words:
                         clean = word.word.strip().upper()
-                        if not clean: continue
+                        if not clean:
+                            continue
                         try:
-                            tc = (TextClip(clean, fontsize=70, color="yellow",
-                                           stroke_color="black", stroke_width=4,
-                                           font="Impact", method="caption",
-                                           size=(video_clip.w * 0.9, None))
-                                  .set_start(word.start).set_end(word.end)
-                                  .set_position(("center", video_clip.h * 0.70)))
+                            tc = (
+                                TextClip(
+                                    clean,
+                                    fontsize=70,
+                                    color="yellow",
+                                    stroke_color="black",
+                                    stroke_width=4,
+                                    font="Impact",
+                                    method="caption",
+                                    size=(video_clip.w * 0.9, None),
+                                )
+                                .set_start(word.start)
+                                .set_end(word.end)
+                                .set_position(("center", video_clip.h * 0.70))
+                            )
                             sub_clips.append(tc)
-                        except Exception: pass
+                        except Exception:
+                            pass
             return CompositeVideoClip([video_clip] + sub_clips) if sub_clips else video_clip
         except Exception:
             return video_clip
@@ -1296,6 +1526,7 @@ def generate_thumbnail(
         # "UNSOLVED" badge
         draw.rectangle([(40, 148), (272, 200)], fill=(170, 0, 0))
         draw.text((56, 153), "UNSOLVED", font=fn_badge, fill=(255, 255, 255))
+        draw.text((40, 220), "TRUE STORY", font=get_subtitle_font(34), fill=(230, 230, 230))
 
         base.save(output_path, "JPEG", quality=95)
         print(f"✅ Thumbnail → {output_path}")
@@ -1382,6 +1613,7 @@ def upload_to_youtube(
 # ═══════════════════════════════════════════════════════════
 #  PHASE 5 — THE MARKETER
 # ═══════════════════════════════════════════════════════════
+
 def generate_youtube_metadata(
     script_text: str,
     sota_models: list[str],
@@ -1389,35 +1621,55 @@ def generate_youtube_metadata(
 ) -> dict:
     sys = "You are an elite YouTube Shorts SEO Strategist. Output ONLY the exact data requested."
 
-    title = ask_llm(sys, f"""Write ONE viral YouTube Shorts title (under 50 characters).
-RULES:
-- Create a Curiosity Gap — do NOT reveal the ending or twist.
-- GOOD: "The man who didn't exist"   BAD: "The Somerton Man Mystery Explained"
-- No quotes. No hashtags.
-Script: {script_text}""", sota_models).strip('"').replace("'", "") or "They found WHAT?"
+    title_pack = ask_llm(
+        sys,
+        f"""Write EXACTLY 3 different YouTube Shorts title candidates.
+Rules:
+- Each title must be under 50 characters.
+- Each title must create a curiosity gap.
+- Do NOT reveal the twist, ending, or full case name.
+- Candidate 1 should be safest.
+- Candidate 2 should be the sharpest curiosity hook.
+- Candidate 3 should be the most emotionally charged.
+- Separate the 3 titles with || only.
+Script: {script_text}""",
+        sota_models,
+    )
 
-    description = ask_llm(sys,
-        f"Write a 3-sentence YouTube Shorts description for title: '{title}'. "
-        "Final sentence MUST be a provocative question. No hashtags.",
-        sota_models
+    candidates = [t.strip().strip('"').strip("'") for t in title_pack.split("||")] if title_pack else []
+    title = _pick_best_title(candidates, case_name=case_name) or "They found WHAT?"
+
+    description = ask_llm(
+        sys,
+        f"""Write a 3-sentence YouTube Shorts description for title: '{title}'.
+Requirements:
+1. First sentence should deepen intrigue without giving away the answer.
+2. Second sentence should reinforce the investigative / documentary tone.
+3. Final sentence MUST be a provocative question.
+No hashtags.""",
+        sota_models,
     ) or "An unsolved mystery that will leave you speechless."
 
-    tags_raw = ask_llm(sys,
+    tags_raw = ask_llm(
+        sys,
         f"Title: '{title}'. Give exactly 10 highly-searched SEO tags, comma-separated. No hashtags.",
-        sota_models
+        sota_models,
     )
     tags = (
-        [t.strip().replace("#", "") for t in tags_raw.split(",")]
+        [t.strip().replace("#", "") for t in tags_raw.split(",") if t.strip()]
         if tags_raw
-        else ["mystery", "shorts", "creepy", "unsolved", "truecrime",
-              "coldcase", "horror", "scary", "paranormal", "history"]
+        else [
+            "mystery", "shorts", "creepy", "unsolved", "truecrime",
+            "coldcase", "horror", "scary", "paranormal", "history"
+        ]
     )
 
     return {
-        "title":       f"{title} #shorts #mystery",
+        "title": f"{title} #shorts #mystery",
         "description": description,
-        "tags":        tags,
+        "tags": tags,
     }
+
 
 
 def generate_platform_captions(
@@ -1472,6 +1724,10 @@ def main_pipeline() -> tuple:
     # Enforce format line limit
     if len(script.get("lines", [])) > fmt["max_lines"]:
         script["lines"] = script["lines"][:fmt["max_lines"]]
+
+    script["format_label"] = fmt["label"]
+    script["format_description"] = fmt["description"]
+    script["retention_profile"] = script.get("retention_profile", {})
 
     era       = script.get("era", "unknown")
     case_name = script.get("case_name", "Unknown Case")
@@ -1627,6 +1883,14 @@ if __name__ == "__main__":
         success, video_id = upload_to_youtube(video_path, yt_metadata, thumbnail_path)
 
         if success:
+            record_run_memory({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "case_name": script_data.get("case_name", "Unknown Case"),
+                "title": yt_metadata.get("title", ""),
+                "format_label": script_data.get("format_label", ""),
+                "era": script_data.get("era", ""),
+                "video_id": video_id,
+            })
             save_new_topic(script_data.get("case_name", "Unknown Case"))
             fb_caption = generate_platform_captions(yt_metadata, "Facebook",  sota_models)
             ig_caption = generate_platform_captions(yt_metadata, "Instagram", sota_models)
