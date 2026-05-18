@@ -44,7 +44,7 @@ from googleapiclient.http import MediaFileUpload
 
 import requests
 
-from neural_voice_upgraded import VoiceEngine, VOICE_MAP
+from neural_voice import VoiceEngine, VOICE_MAP
 import meta_upload
 
 # ─────────────────────────────────────────────────────────
