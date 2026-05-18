@@ -771,7 +771,7 @@ Return ONLY a numbered list of revised clean_text lines:
     if "case_name" not in script_data:
         script_data["case_name"] = case_name
 
-    script_data = normalize_script_for_retention(script_data, case_name=case_name)
+    script_data = build_retention_profile(script_data, case_name=case_name)
     return script_data
 
 
