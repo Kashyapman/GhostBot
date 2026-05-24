@@ -32,10 +32,10 @@ SILENCE_MAP = {
 # VOICE MAPS (Dual Engine Support)
 # ============================================================
 ELEVENLABS_VOICES = {
-    "narrator": "JBFqnCBcs615vqwOOAbo",  # George
-    "witness":  "EXAVITQu4vr4xnSDxMaL",  # Bella
-    "document": "ErXwobaYiN019PkySvjV",  # Antoni
-    "reporter": "TX3OmfOUXGLcasCjUmBq",  # Liam
+    "narrator": "VJwFZoxTZo5aI0IowiXA",  # David - Deep, Warm, and Steady
+    "witness":  "iVwieylcLv7bwfinSNdw",  # Louise - Clear, calm, thoughtful
+    "document": "ddiq1IkwhtAlQgobNKtj",  # John - Flat, Even and Consistent
+    "reporter": "H538pP1BbhodCGiYVMKD",  # Harry - Articulate British Storyteller
 }
 
 GEMINI_VOICES = {
