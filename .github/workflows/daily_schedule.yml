@@ -86,6 +86,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           # NEW: Passes the Puter Auth Token directly to your Python/Node pipeline
           PUTER_AUTH_TOKEN: ${{ secrets.PUTER_AUTH_TOKEN }}
+          ELEVEN_API_KEY_1: ${{ secrets.ELEVEN_API_KEY_1 }}
+          ELEVEN_API_KEY_2: ${{ secrets.ELEVEN_API_KEY_2 }}
         run: python main.py
 
       - name: Debug Visuals (Verify Image Downloads)
