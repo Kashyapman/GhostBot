@@ -29,6 +29,12 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      # NEW: Sets up the Node.js environment required for Puter.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Install System Dependencies & Fix Permissions
         run: |
           sudo apt-get update
@@ -57,6 +63,13 @@ jobs:
           
           pip install -r requirements.txt
 
+      # NEW: Installs Puter.js and configures the runner for ES Modules
+      - name: Install Node Dependencies (Puter.js)
+        run: |
+          npm init -y
+          npm pkg set type="module"
+          npm install @heyputer/puter.js
+
       - name: Run GhostBot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -71,6 +84,8 @@ jobs:
           GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # NEW: Passes the Puter Auth Token directly to your Python/Node pipeline
+          PUTER_AUTH_TOKEN: ${{ secrets.PUTER_AUTH_TOKEN }}
         run: python main.py
 
       - name: Debug Visuals (Verify Image Downloads)
