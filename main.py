@@ -1,20 +1,11 @@
 """
-COLD CASE ARCHIVE — Automated Documentary Pipeline v2.0
+COLD CASE ARCHIVE — Automated Documentary Pipeline v3.0
 ========================================================
-Upgrades vs v1:
-  1.  Live Research Injection     — Wikipedia + Google News RSS scraped before writing
-  2.  Channel Persona             — "former detective" voice locked across all LLM calls
-  3.  Multi-Draft Writing         — factual draft → cinematic refinement pass
-  4.  Contradiction Engine        — official record vs witness account built into every script
-  5.  Dual-Voice Narration        — narrator / witness / document voices via VOICE_MAP
-  6.  Era-Matched Visual Defects  — decade-specific film texture on every FLUX prompt
-  7.  Eased Parallax Curves       — cosine S-curve replaces linear shift (organic feel)
-  8.  Cross-Dissolve Transitions  — 0.4s overlapping fadein/fadeout between clips
-  9.  Netflix Karaoke Subtitles   — full phrase shown, active word highlighted in yellow
-  10. Thumbnail Generator         — dramatic PIL composite saved + uploaded to YouTube
-  +   End Screen                  — 2.5s black card with haunting question drives replays
-  +   Variable Video Length       — short / medium / deep formats selected randomly
-  +   Cinematic Stingers          — keyword-triggered impact SFX at key narrative beats
+Upgrades vs v2:
+  1.  AI-First Evidence Engine    — Bypasses random Google Image garbage.
+  2.  Asset Type Routing          — LLM strictly categorizes shots as "ai", "archive", or "stock".
+  3.  Evidence Board Matting      — Adds hyper-realistic pinned-photo shadows to generated images.
+  4.  Strict Archive Banning      — Prevents pulling clip-art, random athletes, or modern UI.
 """
 
 import os, random, time, json, glob, math, base64, urllib.parse, re
@@ -77,7 +68,7 @@ IMAGE_TRANSITION_T  = 3.0        # seconds per image slot
 CROSSFADE_DUR       = 0.4        # seconds for cross-dissolve overlap
 
 # ─────────────────────────────────────────────────────────
-#  UPGRADE 6 — ERA-MATCHED VISUAL TEXTURES
+#  ERA-MATCHED VISUAL TEXTURES
 #  Every FLUX.1 ai_prompt gets this appended automatically
 # ─────────────────────────────────────────────────────────
 ERA_STYLES = {
@@ -108,7 +99,7 @@ ERA_STYLES = {
 }
 
 # ─────────────────────────────────────────────────────────
-#  UPGRADE 13 — CINEMATIC STINGERS
+#  CINEMATIC STINGERS
 #  Keyword → SFX file in the /sfx/ directory
 # ─────────────────────────────────────────────────────────
 SFX_KEYWORD_MAP = {
@@ -139,7 +130,7 @@ STINGER_MAP = {
 }
 
 # ─────────────────────────────────────────────────────────
-#  UPGRADE 11 — VARIABLE VIDEO LENGTHS
+#  VARIABLE VIDEO LENGTHS
 # ─────────────────────────────────────────────────────────
 VIDEO_FORMATS = [
     {"label": "short",  "max_lines": 8,  "description": "Quick Hit  (~45 s)"},
@@ -453,7 +444,7 @@ def ask_llm(system_instruction: str, prompt: str, sota_models: list[str]) -> str
 
 
 # ═══════════════════════════════════════════════════════════
-#  UPGRADE 1 — LIVE RESEARCH ENGINE
+#  LIVE RESEARCH ENGINE
 # ═══════════════════════════════════════════════════════════
 def scrape_wikipedia(case_name: str) -> str:
     """Fetches the full Wikipedia article plain-text extract for a case."""
@@ -576,7 +567,7 @@ Requirements:
 
 
 # ═══════════════════════════════════════════════════════════
-#  UPGRADE 2 + 3 + 4 + 5 — THE WRITER
+#  THE WRITER
 #  Research-grounded · Channel persona · Multi-draft · Dual voice
 # ═══════════════════════════════════════════════════════════
 
@@ -776,7 +767,7 @@ Return ONLY a numbered list of revised clean_text lines:
 
 
 # ═══════════════════════════════════════════════════════════
-#  UPGRADE 6 — ERA-MATCHED CINEMATOGRAPHER
+#  AI-FIRST CINEMATOGRAPHER & ASSET ROUTING
 # ═══════════════════════════════════════════════════════════
 
 def generate_cinematographer_prompts(
@@ -787,27 +778,15 @@ def generate_cinematographer_prompts(
 ) -> list[dict]:
     era_texture = ERA_STYLES.get(era, ERA_STYLES["unknown"])
 
-    fallback_vis = {
-        "search_query": "historical crime evidence",
-        "hero_object": "redacted document",
-        "shot_type": "Close-Up",
-        "camera_motion": "slow push-in",
-        "motion_cue": "still frame with tension",
-        "ai_prompt": (
-            f"Dark cinematic mystery scene, documentary style, volumetric lighting, "
-            f"vertical composition, a clear hero object in frame, realistic documentary archive feel, "
-            f"{era_texture}"
-        ),
-    }
-
     template = """{
   "visuals": [
     {
+      "asset_type": "ai",
       "search_query": "Somerton beach 1948",
       "hero_object": "worn leather wallet",
       "shot_type": "Extreme Close-Up",
       "camera_motion": "slow push-in",
-      "motion_cue": "hands enter frame with caution",
+      "motion_cue": "static tension",
       "ai_prompt": "Extreme close-up worn leather wallet on detective desk, harsh desk lamp, aged 35mm film, film halation, dust on lens, yellowed, non-uniform grain, cinematic, vertical, 1940s-1960s film texture"
     }
   ]
@@ -824,13 +803,12 @@ MANDATORY TEXTURE FOR EVERY AI PROMPT — append this to every ai_prompt:
 "{era_texture}"
 
 SHOT DESIGN RULES:
-- Every visual must carry one clear hero object.
-- Rotate shot types naturally: Extreme Close-Up, Wide Establishing, Over-the-Shoulder, Dutch Angle.
-- Every prompt must include a camera distance cue and a motion cue.
-- Keep the frame grounded in physical spaces, not abstract symbolism.
-- BANNED: legible text, signs, numbers, captions, or interface overlays.
-- Prefer concrete evidence: notes, doors, windows, folders, gloves, tape, rooms, roads.
-- Search queries must be 2 to 4 keywords only, concrete nouns only.
+1. asset_type MUST be "ai" for 95% of shots. AI recreations (e.g., "macro shot of a rusted key", "top-down view of redacted police files") look 100x better than random archive searches.
+2. asset_type CAN be "archive" ONLY for highly specific, globally known historical figures or locations (e.g., "Alcatraz"). BANNED: Do not use "archive" for generic nouns like "analyst", "blueprint", "gears".
+3. asset_type CAN be "stock" for abstract mood elements (e.g. "dark rainy window").
+4. Every visual must carry one clear hero object.
+5. Rotate shot types naturally: Extreme Close-Up, Wide Establishing, Over-the-Shoulder, Dutch Angle.
+6. BANNED: legible text, signs, numbers, captions, or interface overlays.
 
 Return ONLY valid JSON with EXACTLY {required_images} items:
 {template}
@@ -839,6 +817,12 @@ Return ONLY valid JSON with EXACTLY {required_images} items:
     def _normalize_visual(item: dict, idx: int) -> dict:
         if not isinstance(item, dict):
             item = {}
+            
+        asset_type = item.get("asset_type", "ai").lower()
+        if asset_type not in ["ai", "archive", "stock"]:
+            asset_type = "ai"
+            
+        item["asset_type"] = asset_type
         item.setdefault("search_query", "historical crime evidence")
         item.setdefault("hero_object", "redacted document")
         item.setdefault("shot_type", ["Extreme Close-Up", "Wide Establishing", "Over-the-Shoulder", "Dutch Angle"][idx % 4])
@@ -896,7 +880,7 @@ Return ONLY valid JSON with EXACTLY {required_images} items:
 
 
 # ═══════════════════════════════════════════════════════════
-#  4-LAYER TITANIUM PIPELINE (unchanged logic, kept intact)
+#  4-LAYER TITANIUM PIPELINE
 # ═══════════════════════════════════════════════════════════
 def fetch_archive_image(query: str, filename: str) -> bool:
     print(f"🏛️  [1/4] Archives: {query[:45]}...")
@@ -1019,7 +1003,7 @@ def verify_and_convert_image(filename: str) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════
-#  CONTEXTUAL MATTING (unchanged)
+#  CONTEXTUAL MATTING 
 # ═══════════════════════════════════════════════════════════
 def apply_diegetic_matting(filename: str) -> bool:
     try:
@@ -1027,7 +1011,7 @@ def apply_diegetic_matting(filename: str) -> bool:
             img  = img.convert("RGBA")
             tw, th = VIDEO_WIDTH, VIDEO_HEIGHT
             bg   = PIL.Image.new("RGBA", (tw, th), (12, 12, 15, 255))
-            style = random.choice(["polaroid", "cinematic_shadow", "crt_monitor"])
+            style = random.choice(["polaroid", "cinematic_shadow", "crt_monitor", "evidence_board"])
 
             if style == "polaroid":
                 img.thumbnail((450, 450), PIL.Image.Resampling.LANCZOS)
@@ -1048,6 +1032,22 @@ def apply_diegetic_matting(filename: str) -> bool:
                 bg.paste(shadow, (ox + 15, oy + 15), shadow)
                 bg.paste(img,    (ox, oy),            img)
 
+            elif style == "evidence_board":
+                img.thumbnail((540, 720), PIL.Image.Resampling.LANCZOS)
+                border = 12
+                fw, fh = img.width + border*2, img.height + border*2
+                frame  = PIL.Image.new("RGBA", (fw, fh), (245, 245, 240, 255))
+                frame.paste(img, (border, border))
+                frame = frame.rotate(random.uniform(-3, 3), expand=True, fillcolor=(0,0,0,0))
+                
+                shadow = PIL.Image.new("RGBA", frame.size, (0, 0, 0, 180))
+                shadow = shadow.filter(PIL.ImageFilter.GaussianBlur(12))
+                
+                ox = (tw - frame.width)  // 2
+                oy = (th - frame.height) // 2
+                bg.paste(shadow, (ox + 12, oy + 12), shadow)
+                bg.paste(frame, (ox, oy), frame)
+
             elif style == "crt_monitor":
                 img.thumbnail((680, 1000), PIL.Image.Resampling.LANCZOS)
                 d = PIL.ImageDraw.Draw(img)
@@ -1065,7 +1065,7 @@ def apply_diegetic_matting(filename: str) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════
-#  UPGRADE 7 — EASED PARALLAX ENGINE
+#  EASED PARALLAX ENGINE
 # ═══════════════════════════════════════════════════════════
 def generate_depth_map(image_path: str) -> str | None:
     print(f"🧠 Depth Map → {os.path.basename(image_path)}")
@@ -1122,13 +1122,24 @@ def apply_parallax_effect(
     )
 
 
-def get_image_clip(search_query: str, ai_prompt: str, duration: float, index: int):
+def get_image_clip(asset_type: str, search_query: str, ai_prompt: str, duration: float, index: int):
     """Full Titanium Pipeline + eased parallax + cross-dissolve."""
     fname = f"temp_img_{index}.jpg"
+    ok = False
+    
+    print(f"🎬 [Shot {index}] Type: {asset_type} | Target: {search_query[:30] if asset_type != 'ai' else ai_prompt[:30]}")
 
-    ok = fetch_archive_image(search_query, fname)
-    if not ok: ok = fetch_cloudflare_image(ai_prompt, fname)
-    if not ok: ok = fetch_pexels_image(ai_prompt, fname)
+    if asset_type == "archive":
+        ok = fetch_archive_image(search_query, fname)
+        if not ok: ok = fetch_cloudflare_image(ai_prompt, fname)
+    elif asset_type == "stock":
+        ok = fetch_pexels_image(search_query, fname)
+        if not ok: ok = fetch_cloudflare_image(ai_prompt, fname)
+    else: # "ai"
+        ok = fetch_cloudflare_image(ai_prompt, fname)
+        if not ok: ok = fetch_pexels_image(search_query, fname)
+        if not ok: ok = fetch_archive_image(search_query, fname)
+
     if not ok: ok = fetch_placeholder_image(fname)
 
     if not verify_and_convert_image(fname):
@@ -1150,7 +1161,6 @@ def get_image_clip(search_query: str, ai_prompt: str, duration: float, index: in
         depth_path = generate_depth_map(cropped_path)
 
         if depth_path and os.path.exists(depth_path):
-            # ── UPGRADE 7: Eased parallax ──
             img_arr   = cv2.cvtColor(cv2.imread(cropped_path), cv2.COLOR_BGR2RGB)
             depth_arr = cv2.imread(depth_path, cv2.IMREAD_GRAYSCALE)
             cam_dir   = "left" if index % 2 == 0 else "right"
@@ -1173,7 +1183,6 @@ def get_image_clip(search_query: str, ai_prompt: str, duration: float, index: in
                 width=VIDEO_WIDTH, height=VIDEO_HEIGHT
             )
 
-        # ── UPGRADE 8: Cross-dissolve transitions ──
         clip = clip.fx(fadein, CROSSFADE_DUR).fx(fadeout, CROSSFADE_DUR)
         return clip
 
@@ -1183,7 +1192,7 @@ def get_image_clip(search_query: str, ai_prompt: str, duration: float, index: in
 
 
 # ═══════════════════════════════════════════════════════════
-#  ATMOSPHERICS & MUSIC (unchanged)
+#  ATMOSPHERICS & MUSIC 
 # ═══════════════════════════════════════════════════════════
 def fetch_atmospheric_b_roll(duration: float, filename: str = "temp_atmosphere.mp4") -> bool:
     print("🌫️  Fetching Atmospheric B-Roll (Pexels Video)...")
@@ -1246,7 +1255,7 @@ SCRIPT: {script_text}""",
 
 
 # ═══════════════════════════════════════════════════════════
-#  UPGRADE 13 — SFX + CINEMATIC STINGERS
+#  SFX + CINEMATIC STINGERS
 # ═══════════════════════════════════════════════════════════
 def add_sfx(audio_clip, text: str):
     text_l = text.lower()
@@ -1280,7 +1289,7 @@ def add_stinger_sfx(audio_clip, text: str):
 
 
 # ═══════════════════════════════════════════════════════════
-#  UPGRADE 9 — NETFLIX KARAOKE SUBTITLE SYSTEM
+#  NETFLIX KARAOKE SUBTITLE SYSTEM
 # ═══════════════════════════════════════════════════════════
 def get_subtitle_font(size: int = 60):
     candidates = [
@@ -1314,14 +1323,13 @@ def make_karaoke_frame(
     img = PIL.Image.new("RGBA", (video_width, frame_h), (0, 0, 0, 0))
     draw = PIL.ImageDraw.Draw(img)
 
-    # Base font sizes (Made larger and cleaner)
+    # Base font sizes
     norm_size = 54
     act_size = 68
 
     fn_normal = get_subtitle_font(norm_size)
     fn_active = get_subtitle_font(act_size)
 
-    # Helper to calculate the width of the current phrase
     def get_widths(f_norm, f_act):
         w_list = []
         for i, w in enumerate(words):
@@ -1333,8 +1341,6 @@ def make_karaoke_frame(
     widths = get_widths(fn_normal, fn_active)
     total_w = sum(widths)
 
-    # CRITICAL FIX: If text is too wide, physically shrink the font size 
-    # instead of overlapping the letters.
     max_w = video_width - 40
     while total_w > max_w and norm_size > 24:
         norm_size -= 2
@@ -1350,17 +1356,13 @@ def make_karaoke_frame(
         is_active = (i == active_idx)
         fn = fn_active if is_active else fn_normal
         
-        # Un-active words are slightly transparent white, Active word is bold Yellow
         fill = (255, 230, 0, 255) if is_active else (255, 255, 255, 210)
         
-        # Align bottom so words don't jump up and down awkwardly
         bbox = draw.textbbox((0, 0), w["word"], font=fn)
         text_h = bbox[3] - bbox[1]
         
-        # Add a slight upward pop to the active word
         y = (frame_h - text_h) // 2 + (6 if not is_active else 0) 
 
-        # CRITICAL FIX: Draw using Pillow's native, high-quality stroke instead of 8 messy loops
         draw.text(
             (x, y), 
             w["word"], 
@@ -1412,7 +1414,6 @@ def add_dynamic_subtitles(video_clip, audio_path: str):
         words_per_second = len(all_words) / max(duration, 1.0)
         phrase_cap = 2 if words_per_second > 2.8 or duration < 60 else 3
 
-        # Break on natural pauses or when the phrase cap is reached.
         phrases = []
         current = []
         for word in all_words:
@@ -1480,28 +1481,19 @@ def add_dynamic_subtitles(video_clip, audio_path: str):
 
 
 # ═══════════════════════════════════════════════════════════
-#  UPGRADE 10 — THUMBNAIL GENERATOR
+#  THUMBNAIL GENERATOR
 # ═══════════════════════════════════════════════════════════
 def generate_thumbnail(
     case_name: str,
     source_image_path: str,
     output_path: str = "thumbnail.jpg"
 ) -> str | None:
-    """
-    Composites a high-CTR YouTube thumbnail:
-      • Dark-graded base image (55% brightness, slight red boost)
-      • Yellow case-name title at top with black stroke
-      • Red "UNSOLVED" badge
-      • Red banner at bottom with channel handle
-    """
     print("🖼️  Generating YouTube Thumbnail...")
     try:
         with PIL.Image.open(source_image_path) as img:
             img       = img.convert("RGB").resize((1280, 720), PIL.Image.Resampling.LANCZOS)
             arr       = np.array(img, dtype=np.float32)
-            # Dark grade
             arr       = np.clip(arr * 0.55 + 10, 0, 255).astype(np.uint8)
-            # Red channel push for true crime aesthetic
             arr[:,:,0] = np.clip(arr[:,:,0].astype(int) + 28, 0, 255)
             base      = PIL.Image.fromarray(arr)
 
@@ -1514,16 +1506,13 @@ def generate_thumbnail(
         fn_badge  = get_subtitle_font(42)
         fn_handle = get_subtitle_font(38)
 
-        # Bottom red banner
         draw.rectangle([(0, 570), (1280, 720)], fill=(170, 0, 0))
         draw.text((44, 594), CHANNEL_HANDLE, font=fn_handle, fill=(255, 255, 255))
 
-        # Case name — black stroke
         for dx, dy in [(-3,3),(3,3),(-3,-3),(3,-3),(0,4),(0,-4),(4,0),(-4,0)]:
             draw.text((40 + dx, 28 + dy), title, font=fn_title, fill=(0, 0, 0))
         draw.text((40, 28), title, font=fn_title, fill=(255, 230, 0))
 
-        # "UNSOLVED" badge
         draw.rectangle([(40, 148), (272, 200)], fill=(170, 0, 0))
         draw.text((56, 153), "UNSOLVED", font=fn_badge, fill=(255, 255, 255))
         draw.text((40, 220), "TRUE STORY", font=get_subtitle_font(34), fill=(230, 230, 230))
@@ -1537,7 +1526,7 @@ def generate_thumbnail(
 
 
 # ═══════════════════════════════════════════════════════════
-#  END SCREEN (drives replays)
+#  END SCREEN 
 # ═══════════════════════════════════════════════════════════
 def add_end_screen(video_clip, question: str = "What really happened?"):
     print("🎬 Adding End Screen...")
@@ -1562,7 +1551,7 @@ def add_end_screen(video_clip, question: str = "What really happened?"):
 
 
 # ═══════════════════════════════════════════════════════════
-#  YOUTUBE UPLOAD (with thumbnail)
+#  YOUTUBE UPLOAD
 # ═══════════════════════════════════════════════════════════
 def upload_to_youtube(
     file_path: str,
@@ -1593,7 +1582,6 @@ def upload_to_youtube(
         video_id = insert_rsp.get("id")
         print(f"✅ YouTube upload success! ID: {video_id}")
 
-        # ── UPGRADE 10: Upload custom thumbnail ──
         if thumbnail_path and video_id and os.path.exists(thumbnail_path):
             try:
                 youtube.thumbnails().set(
@@ -1611,7 +1599,7 @@ def upload_to_youtube(
 
 
 # ═══════════════════════════════════════════════════════════
-#  PHASE 5 — THE MARKETER
+#  THE MARKETER
 # ═══════════════════════════════════════════════════════════
 
 def generate_youtube_metadata(
@@ -1671,7 +1659,6 @@ No hashtags.""",
     }
 
 
-
 def generate_platform_captions(
     yt_metadata: dict,
     platform: str,
@@ -1713,7 +1700,6 @@ def main_pipeline() -> tuple:
 
     sota_models = get_top_free_openrouter_models()
 
-    # ── UPGRADE 11: Variable format ──
     fmt = random.choices(VIDEO_FORMATS, weights=[20, 60, 20], k=1)[0]
     print(f"📐 Format: {fmt['description']}")
 
@@ -1721,7 +1707,6 @@ def main_pipeline() -> tuple:
     if not script:
         return None, None, None, None, None
 
-    # Enforce format line limit
     if len(script.get("lines", [])) > fmt["max_lines"]:
         script["lines"] = script["lines"][:fmt["max_lines"]]
 
@@ -1743,7 +1728,6 @@ def main_pipeline() -> tuple:
         style       = line.get("style_instruction", "Measured, authoritative narrator")
         speaker     = line.get("speaker", "narrator")
 
-        # ── UPGRADE 5: Map speaker → Gemini voice ──
         voice_name  = VOICE_MAP.get(speaker, base_voice)
 
         full_script_txt += clean_text + " "
@@ -1769,8 +1753,10 @@ def main_pipeline() -> tuple:
     dur_per_image    = master_voice.duration / len(visual_dirs)
     first_image_path = "temp_img_0.jpg"
 
+    # CRITICAL FIX: Pass asset_type to ensure AI routing
     visual_clips = [
         get_image_clip(
+            v.get("asset_type", "ai"),
             v.get("search_query", ""),
             v.get("ai_prompt", ""),
             dur_per_image, i
@@ -1779,7 +1765,6 @@ def main_pipeline() -> tuple:
     ]
 
     try:
-        # ── UPGRADE 8: Concatenate with cross-dissolve overlap ──
         final_video = (
             concatenate_videoclips(
                 visual_clips, method="compose", padding=-CROSSFADE_DUR
@@ -1788,7 +1773,6 @@ def main_pipeline() -> tuple:
             .fx(colorx, 0.85)
         )
 
-        # Atmospheric overlay
         if fetch_atmospheric_b_roll(master_voice.duration):
             try:
                 atm = (VideoFileClip("temp_atmosphere.mp4").without_audio()
@@ -1810,12 +1794,10 @@ def main_pipeline() -> tuple:
         print(f"❌ Video assembly failed: {e}")
         return None, None, None, None, None
 
-    # ── UPGRADE 9: Karaoke subtitles ──
     temp_voice_track = "temp_master_voice.wav"
     master_voice.write_audiofile(temp_voice_track, fps=24000, logger=None)
     final_video = add_dynamic_subtitles(final_video, temp_voice_track)
 
-    # Watermark
     try:
         wm = (TextClip(CHANNEL_HANDLE, fontsize=28, color="white",
                        font="Impact", stroke_color="black", stroke_width=1)
@@ -1825,7 +1807,6 @@ def main_pipeline() -> tuple:
         final_video = CompositeVideoClip([final_video, wm])
     except Exception: pass
 
-    # Background music
     if fetch_pixabay_audio(full_script_txt, sota_models):
         try:
             bg = audio_loop(
@@ -1837,7 +1818,6 @@ def main_pipeline() -> tuple:
             )
         except Exception: pass
 
-    # ── End Screen ──
     last_line = (script["lines"][-1].get("clean_text", "")
                  if script["lines"] else "")
     end_q     = last_line if "?" in last_line else "What really happened?"
@@ -1854,12 +1834,10 @@ def main_pipeline() -> tuple:
         print(f"❌ Render failed: {e}")
         return None, None, None, None, None
 
-    # ── UPGRADE 10: Thumbnail ──
     thumbnail_path = None
     if os.path.exists(first_image_path):
         thumbnail_path = generate_thumbnail(case_name, first_image_path)
 
-    # Cleanup
     try:
         for f in (glob.glob("temp_*.wav") + glob.glob("temp_*.jpg")
                   + glob.glob("temp_*.mp4") + glob.glob("temp_*.mp3")):
