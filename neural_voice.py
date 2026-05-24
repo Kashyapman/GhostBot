@@ -182,7 +182,7 @@ SCRIPT: {acting_text}'''
         for attempt in range(3):
             try:
                 response = self.gemini_client.models.generate_content(
-                    model="gemini-2.5-flash", contents=prompt, config=config
+                    model="gemini-2.5-flash-preview-tts", contents=prompt, config=config
                 )
 
                 audio_bytes = None
