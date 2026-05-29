@@ -39,8 +39,8 @@ ELEVENLABS_VOICES = {
 }
 
 GEMINI_VOICES = {
-    "narrator": "Charon",    
-    "witness":  "Kore",      
+    "narrator": "Enceladus",    
+    "witness":  "Zephyr",      
     "document": "Fenrir",    
     "reporter": "Puck",      
 }
@@ -49,8 +49,8 @@ VOICE_MAP = GEMINI_VOICES
 
 # Ensures LLM character choices map cleanly to our role system
 LEGACY_VOICE_MAP = {
-    "Charon": "narrator",
-    "Kore":   "witness",
+    "Enceladus": "narrator",
+    "Zephyr":   "witness",
     "Fenrir": "document",
     "Puck":   "reporter"
 }
