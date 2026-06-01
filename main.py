@@ -1720,6 +1720,8 @@ def main_pipeline() -> tuple:
 
     # ══ PHASE 2: MULTI-VOICE AUDIO ASSEMBLY ══
     audio_clips     = []
+    stinger_clips   = []
+    current_time    = 0.0
     full_script_txt = ""
 
     for i, line in enumerate(script["lines"]):
@@ -1736,14 +1738,36 @@ def main_pipeline() -> tuple:
         if wav:
             clip = AudioFileClip(wav)
             clip = add_sfx(clip, clean_text)
-            clip = add_stinger_sfx(clip, clean_text)
+            
+            # Map stingers to the absolute master timeline instead of the individual clip
+            text_l = clean_text.lower()
+            for kw, sfx_file in STINGER_MAP.items():
+                if kw in text_l:
+                    path = os.path.join("sfx", sfx_file)
+                    if os.path.exists(path):
+                        try:
+                            # Start the stinger slightly before the end of the current clip
+                            stinger_start = current_time + min(0.3, max(0.0, clip.duration - 0.6))
+                            stinger = (AudioFileClip(path)
+                                       .volumex(0.38)
+                                       .set_start(stinger_start))
+                            stinger_clips.append(stinger)
+                        except Exception: pass
+                    break # Only one stinger per line
+
             audio_clips.append(clip)
+            current_time += clip.duration
 
     if not audio_clips:
         print("❌ No audio clips generated.")
         return None, None, None, None, None
 
+    # 1. Concatenate the dialogue sequentially first without the 15-second reverb gaps
     master_voice = concatenate_audioclips(audio_clips)
+    
+    # 2. Composite the long reverb stingers OVER the master track so they bleed naturally underneath the next lines
+    if stinger_clips:
+        master_voice = CompositeAudioClip([master_voice] + stinger_clips)
 
     # ══ PHASE 3: VISUAL PIPELINE ══
     required_images  = max(1, int(master_voice.duration / IMAGE_TRANSITION_T))
