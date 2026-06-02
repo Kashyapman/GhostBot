@@ -1264,7 +1264,7 @@ def add_sfx(audio_clip, text: str):
             path = os.path.join("sfx", sfx_file)
             if os.path.exists(path):
                 try:
-                    sfx = AudioFileClip(path).volumex(0.20)
+                    sfx = AudioFileClip(path).volumex(0.60)
                     return CompositeAudioClip(
                         [audio_clip, sfx.subclip(0, min(sfx.duration, audio_clip.duration))]
                     )
@@ -1279,9 +1279,10 @@ def add_stinger_sfx(audio_clip, text: str):
         if kw in text_l:
             path = os.path.join("sfx", sfx_file)
             if os.path.exists(path):
+                print(f"🔊 SUCCESS: Applied SFX -> {path}")
                 try:
                     stinger = (AudioFileClip(path)
-                               .volumex(0.38)
+                               .volumex(0.85)
                                .set_start(min(0.3, max(0.0, audio_clip.duration - 0.6))))
                     return CompositeAudioClip([audio_clip, stinger])
                 except Exception: pass
@@ -1834,7 +1835,7 @@ def main_pipeline() -> tuple:
     if fetch_pixabay_audio(full_script_txt, sota_models):
         try:
             bg = audio_loop(
-                AudioFileClip("temp_bg_music.mp3").volumex(0.055),
+                AudioFileClip("temp_bg_music.mp3").volumex(0.25),
                 duration=final_video.duration
             )
             final_video = final_video.set_audio(
