@@ -51,8 +51,31 @@ VOICE_MAP = GEMINI_VOICES
 LEGACY_VOICE_MAP = {
     "Enceladus": "narrator",
     "Zephyr":   "witness",
-    "Fenrir": "document",
-    "Puck":   "reporter"
+    "Fenrir":   "document",
+    "Puck":     "reporter",
+    "Charon":   "narrator"
+}
+
+# ============================================================
+# GOOGLE STUDIO TTS DYNAMIC ACTING PROMPTS
+# ============================================================
+ROLE_PROMPTS = {
+    "narrator": (
+        "You are a world-weary homicide detective narrating a gritty, unsolved cold case documentary. "
+        "Your vocal tone must be low, grave, hushed, and measured, carrying a heavy weight of dread and quiet intensity."
+    ),
+    "document": (
+        "You are a cold, bureaucratic government official reading directly from an official police record or coroner report. "
+        "Your vocal tone must be completely flat, monotone, clinical, devoid of all emotion, and strictly matter-of-fact."
+    ),
+    "witness": (
+        "You are an eyewitness or retired detective recalling an impossible, disturbing mystery. "
+        "Your vocal tone must sound quietly stunned, emotionally strained, breathy, hesitant, and trembling with disbelief."
+    ),
+    "reporter": (
+        "You are an investigative radio broadcast journalist delivering urgent breaking news on a cold case archive. "
+        "Your voice should be highly articulate, rapid, precise, and authoritative."
+    )
 }
 
 def get_style_silence(style_instruction: str) -> int:
@@ -65,9 +88,9 @@ def get_style_silence(style_instruction: str) -> int:
 
 class VoiceEngine:
     def __init__(self):
-        print("🎚️ Initializing Titanium Voice Engine (ElevenLabs Rotation + Gemini Failover) v5.0...")
+        print("🎚️ Initializing Titanium Voice Engine (Google Studio TTS Dynamic Engine v5.1)...")
 
-        # 1. Load ElevenLabs API Keys for Rotation
+        # 1. Load ElevenLabs API Keys for Rotation (Optional Fallback)
         self.eleven_keys = []
         key1 = os.environ.get("ELEVEN_API_KEY_1")
         key2 = os.environ.get("ELEVEN_API_KEY_2")
@@ -75,12 +98,12 @@ class VoiceEngine:
         if key2: self.eleven_keys.append(key2)
 
         if not self.eleven_keys:
-            print("⚠️ No ElevenLabs keys found in environment. Will default entirely to Gemini TTS.")
+            print("ℹ️ No ElevenLabs keys found in environment. Primary TTS operating via Google Studio Gemini Engine.")
 
-        # 2. Load Gemini API Key for Fallback
+        # 2. Load Gemini API Key for Google Studio TTS
         self.gemini_key = os.environ.get("GEMINI_API_KEY")
         if not self.gemini_key:
-            raise ValueError("GEMINI_API_KEY environment variable is missing. Required for failover.")
+            raise ValueError("GEMINI_API_KEY environment variable is missing. Required for Google Studio TTS.")
 
         self.gemini_client = genai.Client(api_key=self.gemini_key)
 
@@ -107,7 +130,7 @@ class VoiceEngine:
         return sound + AudioSegment.silent(duration=silence_ms)
 
     # ----------------------------------------------------------
-    # PRIMARY ENGINE: ELEVENLABS NATIVE ROTATION
+    # SECONDARY ENGINE: ELEVENLABS ROTATION (OPTIONAL)
     # ----------------------------------------------------------
     def _generate_via_elevenlabs(self, clean_text: str, role: str, index: int) -> str | None:
         if not self.eleven_keys:
@@ -117,16 +140,24 @@ class VoiceEngine:
         temp_raw = f"temp_raw_eleven_{index}.mp3"
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{eleven_id}"
 
+        # Dynamic parameter tuning based on role
+        if role == "witness":
+            stability, similarity, style = 0.30, 0.85, 0.20
+        elif role == "document":
+            stability, similarity, style = 0.85, 0.75, 0.00
+        else:
+            stability, similarity, style = 0.45, 0.75, 0.15
+
         payload = {
             "text": clean_text,
             "model_id": "eleven_multilingual_v2",
             "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.75
+                "stability": stability,
+                "similarity_boost": similarity,
+                "style": style
             }
         }
 
-        # Iterate through available keys until one works
         for i, api_key in enumerate(self.eleven_keys):
             headers = {
                 "Accept": "audio/mpeg",
@@ -145,7 +176,6 @@ class VoiceEngine:
                     return temp_raw
                 else:
                     err_msg = response.text.lower()
-                    # Catch quota limits or unauthorized keys and rotate to the next one
                     if "quota" in err_msg or "insufficient" in err_msg or response.status_code == 401:
                         print(f"   ↳ ⚠️ Key {i+1} exhausted or unauthorized. Rotating...")
                         continue
@@ -156,16 +186,15 @@ class VoiceEngine:
                 print(f"   ↳ ⚠️ Connection Error on Key {i+1}: {e}")
                 continue
 
-        # If loop finishes without returning, all keys are dead
         return None
 
     # ----------------------------------------------------------
-    # SECONDARY ENGINE: GEMINI FALLBACK
+    # PRIMARY ENGINE: GOOGLE STUDIO TTS (GEMINI 2.5 FLASH AUDIO)
     # ----------------------------------------------------------
     def _generate_via_gemini(self, acting_text: str, clean_text: str, style_instruction: str, index: int, role: str) -> str | None:
-        voice_name = GEMINI_VOICES.get(role, "Charon")
+        voice_name = GEMINI_VOICES.get(role, "Enceladus")
         temp_raw = f"temp_raw_gemini_{index}.wav"
-        print(f"   ↳ 🔄 Failover to Gemini [{voice_name}]")
+        print(f"   ↳ 🎙️ Google Studio TTS Rendering [{voice_name} | Role: {role}]")
 
         config = types.GenerateContentConfig(
             response_modalities=["AUDIO"],
@@ -174,9 +203,17 @@ class VoiceEngine:
             )
         )
 
-        prompt = f'''You are a voice actor recording for a gritty True Crime documentary. 
-YOUR VOCAL STYLE FOR THIS LINE: "{style_instruction}"
-Execute SSML tags as stage directions. DO NOT speak the tags.
+        role_directive = ROLE_PROMPTS.get(role, ROLE_PROMPTS["narrator"])
+
+        prompt = f'''{role_directive}
+
+YOUR SPECIFIC VOCAL STYLE FOR THIS EXACT LINE: "{style_instruction}"
+
+PERFORMANCE INSTRUCTIONS:
+1. Execute SSML tags (like pauses, pitch drops, and emphasis) strictly as vocal stage directions.
+2. DO NOT speak SSML tags, prompt instructions, or stage directions aloud.
+3. Deliver the spoken text with authentic human pitch inflections, natural gasps, and emotional weight.
+
 SCRIPT: {acting_text}'''
 
         for attempt in range(3):
@@ -204,7 +241,7 @@ SCRIPT: {acting_text}'''
                 if "429" in str(e) or "503" in str(e):
                     time.sleep(15 + (attempt * 10))
                 else:
-                    print(f"   ↳ ⚠️ Gemini TTS Error: {e}")
+                    print(f"   ↳ ⚠️ Google Studio TTS Error: {e}")
                     break
         return None
 
@@ -219,19 +256,18 @@ SCRIPT: {acting_text}'''
             return None
 
         final_filename = f"temp_voice_{index}.wav"
-        print(f"🎙️ Line {index} | Style: {style_instruction[:40]}...")
+        print(f"🎙️ Line {index} | Role: {role} | Style: {style_instruction[:35]}...")
 
-        # Step 1: Try Native ElevenLabs API with Key Rotation
+        # Step 1: Try Native ElevenLabs API if keys exist
         temp_raw = self._generate_via_elevenlabs(text_payload, role, index)
 
-        # Step 2: Seamless Failover to Gemini TTS if ElevenLabs fails/exhausts
+        # Step 2: Google Studio TTS Engine (Primary or Seamless Failover)
         if not temp_raw or not os.path.exists(temp_raw):
             temp_raw = self._generate_via_gemini(acting_text, clean_text, style_instruction, index, role)
 
-        # Step 3: Master the resulting audio
+        # Step 3: Master the resulting audio stream
         if temp_raw and os.path.exists(temp_raw):
             try:
-                # Pydub automatically detects if the source is mp3 (ElevenLabs) or wav (Gemini)
                 sound = AudioSegment.from_file(temp_raw)
                 sound = self._podcast_mastering(sound, style_instruction, clean_text=text_payload)
                 sound.export(final_filename, format="wav")
