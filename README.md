@@ -1,13 +1,18 @@
-# GhostBot 👻🤖 (v4.0: The Programmatic Documentary Engine)
-> Autonomous, State-of-the-Art (SOTA) high-retention video generator powered by an LLM Cascade, 3D Computer Vision, and psychological watch-time mechanics.
+# GhostBot 👻🤖 (v4.0: The $0 Programmatic Documentary Engine)
+> Autonomous, State-of-the-Art (SOTA) high-retention video generator powered by an LLM Cascade, 3D Computer Vision, and psychological watch-time mechanics—running **100% free** on SOTA free tiers.
 
-GhostBot is a fully automated, end-to-end video production studio engineered specifically for high-retention True Crime, Mystery, and Philosophical content. It has evolved from a simple text-to-video bot into a **programmatic documentary engine**. 
+![GhostBot Cinematic Preview](https://github.com/user-attachments/assets/d7bed62b-9613-404b-a3bb-62473541c46d)
+*Experience buttery-smooth 3D depth parallax, audio ducking ("Tape Stops"), and kinetic optical-glow subtitles—fully automated.*
 
-While standard automation scripts rely on generic stock footage and robotic voiceovers, GhostBot generates cinematic, human-grade edits. Designed to run completely hands-off in the cloud, the bot handles everything from live web research and multi-voice scriptwriting to 3D parallax rendering, dynamic audio ducking, and automated distribution across YouTube and Meta.
+---
 
-### 🎬 The Final Result: Hands-Free Content
-<img width="1053" height="497" alt="YouTube Uploads Proof" src="https://github.com/user-attachments/assets/d7bed62b-9613-404b-a3bb-62473541c46d" />
-*Fully rendered, highly engaging videos automatically uploaded and optimized for algorithmic velocity.*
+## 💸 The $0.00 Tech Stack (How It Runs Free)
+GhostBot is intentionally architected to leverage the most powerful enterprise-grade free tiers in artificial intelligence. It costs **$0.00/month** to host, run, and scale:
+
+* **Scriptwriting & Reasoning ($0):** Orchestrated via **OpenRouter's Free Model Cascade** (Llama 3.3 70b, Qwen 3, Mistral) and Google Gemini Flash.
+* **Voice Acting & Studio TTS ($0):** Powered by **Google Studio TTS** (`gemini-2.5-flash-preview-tts`), injecting natural stage directions for human-grade emotion.
+* **AI Visual B-Roll ($0):** Renders cinematic, vertical historical assets via **Cloudflare Workers AI (FLUX.1 Schnell)**.
+* **Cloud Infrastructure & Compute ($0):** Runs entirely hands-off on **GitHub Actions Free Tier Runners**, executing twice-daily cron jobs without a rented VPS.
 
 ---
 
@@ -22,7 +27,6 @@ GhostBot v4.0 implements advanced psychological retention tactics used by top-ti
 * **Seamless Infinity Loop Architecture:** Grammatically connects the final spoken sentence to the opening hook, and cuts the video on the exact final audio frame to trigger undetectable viewer replays.
 * **Sacred "Pause-Bait" Micro-Clues:** Injects hyper-detailed, text-dense AI visuals (like classified reports or ancient manuscripts) onto the screen for exactly 0.35 seconds to induce algorithmic re-watches and pauses.
 * **Cut-Triggered Micro-Foley & Audio Ducking:** Mathematically syncs subtle sound effects (whooshes, tape clicks, singing bowls) 0.15s before visual transitions, and drops background music to absolute silence (the "Tape Stop" effect) right before major narrative reveals.
-* **Dynamic Studio Acting:** Passes emotional stage directions directly into Gemini Studio TTS to generate breathless, monotone, or strained vocal performances across multiple character roles.
 
 ---
 
@@ -84,7 +88,7 @@ graph TD
 If you want to run the core Python engine locally for testing, script generation, or manual rendering, follow the steps below.
 
 ### Prerequisites
-1. Clone the repository:
+1. Clone the repository or click **"Use this template"** at the top of the GitHub repo:
     ```bash
     git clone [https://github.com/Kashyapman/GhostBot.git](https://github.com/Kashyapman/GhostBot.git)
     cd GhostBot
@@ -101,20 +105,16 @@ If you want to run the core Python engine locally for testing, script generation
     ```
 
 ### Environment Variables & Secrets
-For GitHub Actions (or your `.env` file) to run the pipeline successfully, ensure the following keys are configured:
+Reference the `.env.example` file included in the repository. For GitHub Actions secrets or your local `.env` file, configure the following keys:
 
-**Core AI & Media Generation:**
 * `GEMINI_API_KEY` - Primary TTS, Studio Voice Acting, and fallback LLM.
 * `OPENROUTER_API_KEY` - SOTA LLM Cascade (Llama 3.3, Qwen, Mistral).
 * `CLOUDFLARE_ACCOUNT_ID` & `CLOUDFLARE_API_TOKEN` - For FLUX.1 High-End AI Image generation.
 * `SEARCH_API_KEY` & `GOOGLE_CSE_ID` - For scraping real historical photo evidence.
 * `PEXELS_API_KEY` - For cinematic atmospheric overlays (dust, rain, tactile film burns).
 * `PIXABAY_API_KEY` - For the AI Music Supervisor to fetch dynamic background scores and micro-foley SFX.
-
-**Social Distribution:**
 * `YOUTUBE_TOKEN_JSON` - Authorized OAuth token JSON for automated uploading.
-* `META_ACCESS_TOKEN` - Meta Graph API v19.0 token.
-* `FB_PAGE_ID` & `IG_USER_ID` - Target accounts for Facebook and Instagram publishing.
+* `META_ACCESS_TOKEN`, `FB_PAGE_ID`, `IG_USER_ID` - Meta publishing tokens.
 
 *Note: Ensure your `GITHUB_TOKEN` under Action settings has **Read & Write** permissions so the bot can commit memory updates to `topics.txt`.*
 
@@ -129,4 +129,4 @@ For GitHub Actions (or your `.env` file) to run the pipeline successfully, ensur
 * `topics.txt` - The bot's memory bank to prevent duplicating cases.
 
 ## 📝 License
-This project is private and maintained for automated channel management.
+This project is open-source under the **MIT License**. Feel free to fork, modify, and build your own autonomous studios!
