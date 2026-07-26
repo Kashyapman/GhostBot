@@ -1,10 +1,11 @@
 """
-COLD CASE ARCHIVE — Automated Documentary Pipeline v3.1 (Dynamic Visual Pacing Upgrade)
+COLD CASE ARCHIVE — Automated Documentary Pipeline v3.2 (Seamless Loop Upgrade)
 ========================================================================================
 Upgrades vs v3.0:
   1. Dynamic Visual Pacing — Shot durations match individual audio line durations.
-  2. Crossfade Padding Safeguard — Overlaps line up seamlessly without cutting off runtime.
-  3. Stinger Overflow Catch — Final clip stretches to cover trailing sound effects.
+  2. Seamless Loop Architecture — Completely removed the static end screen. 
+     The final render now cuts on the exact frame the audio finishes, forcing an 
+     instant, undetectable replay of the video to farm algorithmic watch time.
 """
 
 import os, random, time, json, glob, math, base64, urllib.parse, re
@@ -63,7 +64,6 @@ CHANNEL_HANDLE      = "@TheGlitchArchive"
 TOPICS_FILE         = "topics.txt"
 VIDEO_WIDTH         = 720
 VIDEO_HEIGHT        = 1280
-IMAGE_TRANSITION_T  = 3.0        # seconds per image slot (Retained for legacy fallback)
 CROSSFADE_DUR       = 0.4        # seconds for cross-dissolve overlap
 
 # ─────────────────────────────────────────────────────────
@@ -1183,7 +1183,7 @@ def get_image_clip(asset_type: str, search_query: str, ai_prompt: str, duration:
             )
 
         # Dynamic safeguard on fade duration to prevent visual crash on extremely fast audio lines
-        safe_fade = min(CROSSFADE_DUR, duration / 2.0)
+        safe_fade = min(CROSSFADE_DUR, max(0.1, duration / 3.0))
         clip = clip.fx(fadein, safe_fade).fx(fadeout, safe_fade)
         return clip
 
@@ -1528,31 +1528,6 @@ def generate_thumbnail(
 
 
 # ═══════════════════════════════════════════════════════════
-#  END SCREEN 
-# ═══════════════════════════════════════════════════════════
-def add_end_screen(video_clip, question: str = "What really happened?"):
-    print("🎬 Adding End Screen...")
-    END_DUR = 2.5
-    try:
-        card = ColorClip(size=(VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0), duration=END_DUR)
-
-        q_clip = (TextClip(question, fontsize=52, color="white", font="Impact",
-                           stroke_color="#CC0000", stroke_width=2,
-                           method="caption", size=(int(VIDEO_WIDTH * 0.85), None))
-                  .set_position("center").set_duration(END_DUR).fx(fadein, 0.7))
-
-        h_clip = (TextClip(CHANNEL_HANDLE, fontsize=30, color="#888888", font="Impact")
-                  .set_position(("center", int(VIDEO_HEIGHT * 0.75)))
-                  .set_duration(END_DUR).fx(fadein, 1.2))
-
-        end = CompositeVideoClip([card, q_clip, h_clip])
-        return concatenate_videoclips([video_clip, end], method="compose")
-    except Exception as e:
-        print(f"⚠️  End screen failed: {e}")
-        return video_clip
-
-
-# ═══════════════════════════════════════════════════════════
 #  YOUTUBE UPLOAD
 # ═══════════════════════════════════════════════════════════
 def upload_to_youtube(
@@ -1765,7 +1740,7 @@ def main_pipeline() -> tuple:
 
     master_voice = concatenate_audioclips(audio_clips)
     
-    # 2. Composite the long reverb stingers OVER the master track so they bleed naturally underneath the next lines
+    # Composite the long reverb stingers OVER the master track so they bleed naturally underneath the next lines
     if stinger_clips:
         master_voice = CompositeAudioClip([master_voice] + stinger_clips)
 
@@ -1791,12 +1766,12 @@ def main_pipeline() -> tuple:
         # Add CROSSFADE_DUR overlap padding to non-final clips so cross-dissolves don't shorten total runtime
         clip_dur = base_dur + CROSSFADE_DUR if i < num_shots - 1 else base_dur
         
-        # CRITICAL FIX: Catch trailing stinger duration overhangs on the final clip
+        # Catch trailing stinger duration overhangs on the final clip
         if i == num_shots - 1:
             accumulated_visual_dur = sum(c.duration for c in audio_clips[:i])
             clip_dur = max(clip_dur, master_voice.duration - accumulated_visual_dur)
 
-        # CRITICAL FIX: Pass asset_type to ensure AI routing
+        # Pass asset_type to ensure AI routing
         clip = get_image_clip(
             v.get("asset_type", "ai"),
             v.get("search_query", ""),
@@ -1859,11 +1834,6 @@ def main_pipeline() -> tuple:
                 CompositeAudioClip([final_video.audio, bg])
             )
         except Exception: pass
-
-    last_line = (script["lines"][-1].get("clean_text", "")
-                 if script["lines"] else "")
-    end_q     = last_line if "?" in last_line else "What really happened?"
-    final_video = add_end_screen(final_video, end_q)
 
     # ══ RENDER ══
     output_file = "final_video.mp4"
