@@ -1,11 +1,10 @@
 """
-COLD CASE ARCHIVE — Automated Documentary Pipeline v3.0
-========================================================
-Upgrades vs v2:
-  1.  AI-First Evidence Engine    — Bypasses random Google Image garbage.
-  2.  Asset Type Routing          — LLM strictly categorizes shots as "ai", "archive", or "stock".
-  3.  Evidence Board Matting      — Adds hyper-realistic pinned-photo shadows to generated images.
-  4.  Strict Archive Banning      — Prevents pulling clip-art, random athletes, or modern UI.
+COLD CASE ARCHIVE — Automated Documentary Pipeline v3.1 (Dynamic Visual Pacing Upgrade)
+========================================================================================
+Upgrades vs v3.0:
+  1. Dynamic Visual Pacing — Shot durations match individual audio line durations.
+  2. Crossfade Padding Safeguard — Overlaps line up seamlessly without cutting off runtime.
+  3. Stinger Overflow Catch — Final clip stretches to cover trailing sound effects.
 """
 
 import os, random, time, json, glob, math, base64, urllib.parse, re
@@ -64,7 +63,7 @@ CHANNEL_HANDLE      = "@TheGlitchArchive"
 TOPICS_FILE         = "topics.txt"
 VIDEO_WIDTH         = 720
 VIDEO_HEIGHT        = 1280
-IMAGE_TRANSITION_T  = 3.0        # seconds per image slot
+IMAGE_TRANSITION_T  = 3.0        # seconds per image slot (Retained for legacy fallback)
 CROSSFADE_DUR       = 0.4        # seconds for cross-dissolve overlap
 
 # ─────────────────────────────────────────────────────────
@@ -1097,8 +1096,8 @@ def apply_parallax_effect(
     direction: str = "left"
 ) -> np.ndarray:
     max_shift   = 28.0
-    progress    = t / duration
-    eased       = _ease_in_out(progress)
+    progress    = t / max(duration, 0.1)
+    eased       = _ease_in_out(min(max(progress, 0.0), 1.0))
 
     if direction == "left":
         shift = max_shift * (1.0 - eased)
@@ -1123,11 +1122,11 @@ def apply_parallax_effect(
 
 
 def get_image_clip(asset_type: str, search_query: str, ai_prompt: str, duration: float, index: int):
-    """Full Titanium Pipeline + eased parallax + cross-dissolve."""
+    """Full Titanium Pipeline + eased parallax + adaptive cross-dissolve."""
     fname = f"temp_img_{index}.jpg"
     ok = False
     
-    print(f"🎬 [Shot {index}] Type: {asset_type} | Target: {search_query[:30] if asset_type != 'ai' else ai_prompt[:30]}")
+    print(f"🎬 [Shot {index}] Type: {asset_type} | Target: {search_query[:30] if asset_type != 'ai' else ai_prompt[:30]} | Dur: {duration:.2f}s")
 
     if asset_type == "archive":
         ok = fetch_archive_image(search_query, fname)
@@ -1174,8 +1173,8 @@ def get_image_clip(asset_type: str, search_query: str, ai_prompt: str, duration:
         else:
             # Ken Burns with eased zoom
             def zoom_func(t):
-                p     = t / duration
-                eased = _ease_in_out(p)
+                p     = t / max(duration, 0.1)
+                eased = _ease_in_out(min(max(p, 0.0), 1.0))
                 return (1 + 0.06 * eased) if index % 2 == 0 else (1.06 - 0.06 * eased)
 
             clip = base.resize(zoom_func).crop(
@@ -1183,7 +1182,9 @@ def get_image_clip(asset_type: str, search_query: str, ai_prompt: str, duration:
                 width=VIDEO_WIDTH, height=VIDEO_HEIGHT
             )
 
-        clip = clip.fx(fadein, CROSSFADE_DUR).fx(fadeout, CROSSFADE_DUR)
+        # Dynamic safeguard on fade duration to prevent visual crash on extremely fast audio lines
+        safe_fade = min(CROSSFADE_DUR, duration / 2.0)
+        clip = clip.fx(fadein, safe_fade).fx(fadeout, safe_fade)
         return clip
 
     except Exception as e:
@@ -1602,7 +1603,6 @@ def upload_to_youtube(
 # ═══════════════════════════════════════════════════════════
 #  THE MARKETER
 # ═══════════════════════════════════════════════════════════
-
 def generate_youtube_metadata(
     script_text: str,
     sota_models: list[str],
@@ -1763,31 +1763,48 @@ def main_pipeline() -> tuple:
         print("❌ No audio clips generated.")
         return None, None, None, None, None
 
-    # 1. Concatenate the dialogue sequentially first without the 15-second reverb gaps
     master_voice = concatenate_audioclips(audio_clips)
     
     # 2. Composite the long reverb stingers OVER the master track so they bleed naturally underneath the next lines
     if stinger_clips:
         master_voice = CompositeAudioClip([master_voice] + stinger_clips)
 
-    # ══ PHASE 3: VISUAL PIPELINE ══
-    required_images  = max(1, int(master_voice.duration / IMAGE_TRANSITION_T))
-    visual_dirs      = generate_cinematographer_prompts(
+    # ══ PHASE 3: VISUAL PIPELINE (DYNAMIC BEAT-MATCHED PACING) ══
+    # Align shot count directly with spoken dialogue lines
+    required_images = len(audio_clips)
+    visual_dirs     = generate_cinematographer_prompts(
         full_script_txt, required_images, sota_models, era=era
     )
-    dur_per_image    = master_voice.duration / len(visual_dirs)
     first_image_path = "temp_img_0.jpg"
 
-    # CRITICAL FIX: Pass asset_type to ensure AI routing
-    visual_clips = [
-        get_image_clip(
+    # Dynamically scale each image clip duration to match its corresponding audio line duration
+    visual_clips = []
+    num_shots = len(visual_dirs)
+
+    for i, v in enumerate(visual_dirs):
+        # Fallback if somehow visual_dirs is longer than audio_clips
+        if i < len(audio_clips):
+            base_dur = audio_clips[i].duration
+        else:
+            base_dur = master_voice.duration / num_shots
+        
+        # Add CROSSFADE_DUR overlap padding to non-final clips so cross-dissolves don't shorten total runtime
+        clip_dur = base_dur + CROSSFADE_DUR if i < num_shots - 1 else base_dur
+        
+        # CRITICAL FIX: Catch trailing stinger duration overhangs on the final clip
+        if i == num_shots - 1:
+            accumulated_visual_dur = sum(c.duration for c in audio_clips[:i])
+            clip_dur = max(clip_dur, master_voice.duration - accumulated_visual_dur)
+
+        # CRITICAL FIX: Pass asset_type to ensure AI routing
+        clip = get_image_clip(
             v.get("asset_type", "ai"),
             v.get("search_query", ""),
             v.get("ai_prompt", ""),
-            dur_per_image, i
+            clip_dur,
+            i
         )
-        for i, v in enumerate(visual_dirs)
-    ]
+        visual_clips.append(clip)
 
     try:
         final_video = (
