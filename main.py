@@ -1,13 +1,15 @@
 """
-COLD CASE ARCHIVE — Automated Documentary Pipeline v3.5 (The Kinetic Upgrade)
+COLD CASE ARCHIVE — Automated Documentary Pipeline v3.6 (The Pause-Bait & Persona Upgrade)
 ========================================================================================
-Upgrades vs v3.4:
+Upgrades vs v3.5:
   1. Dynamic Visual Pacing — Shot durations match individual audio line durations.
   2. Seamless Loop Architecture — Removed static end screen for algorithmic replay.
   3. Audio Ducking (Tape Stop) — Dynamically drops background music before key reveals.
   4. Advanced B-Roll Texturing — Tactile stock flashes precisely on dialogue cuts.
-  5. Kinetic Subtitles — Dual-pass rendering adds After Effects-style optical glow 
-     and high-contrast typography to the active spoken word.
+  5. Kinetic Subtitles — Dual-pass rendering with optical yellow/white glow.
+  6. First-Person Detective Persona — Rewrote script engine to eliminate Wiki tone.
+  7. "Pause-Bait" Micro-Clues — Injects 0.35s hyper-detailed evidence flashes to 
+     force user pauses/rewinds and spike retention metrics past 100%.
 """
 
 import os, random, time, json, glob, math, base64, urllib.parse, re
@@ -70,7 +72,6 @@ CROSSFADE_DUR       = 0.4        # seconds for cross-dissolve overlap
 
 # ─────────────────────────────────────────────────────────
 #  ERA-MATCHED VISUAL TEXTURES
-#  Every FLUX.1 ai_prompt gets this appended automatically
 # ─────────────────────────────────────────────────────────
 ERA_STYLES = {
     "1900s-1930s": (
@@ -101,7 +102,6 @@ ERA_STYLES = {
 
 # ─────────────────────────────────────────────────────────
 #  CINEMATIC STINGERS
-#  Keyword → SFX file in the /sfx/ directory
 # ─────────────────────────────────────────────────────────
 SFX_KEYWORD_MAP = {
     "knock":   "knock.mp3",
@@ -391,7 +391,6 @@ def get_top_free_openrouter_models(limit: int = 3) -> list[str]:
 
 
 def ask_llm(system_instruction: str, prompt: str, sota_models: list[str]) -> str:
-    """Tries OpenRouter SOTA cascade then Gemini Flash as final fallback."""
     full_prompt = prompt + "\n\nCRITICAL: Return ONLY the exact requested content. No preamble, no markdown."
 
     if OPENROUTER_KEY:
@@ -418,7 +417,6 @@ def ask_llm(system_instruction: str, prompt: str, sota_models: list[str]) -> str
             except Exception:
                 time.sleep(4)
 
-    # Gemini Flash fallback
     try:
         client = genai.Client(api_key=GEMINI_KEY)
         cfg = types.GenerateContentConfig(
@@ -545,7 +543,7 @@ Requirements:
 
 
 # ═══════════════════════════════════════════════════════════
-#  THE WRITER
+#  THE WRITER (FIRST-PERSON DETECTIVE PERSONA UPGRADE)
 # ═══════════════════════════════════════════════════════════
 def generate_viral_script(sota_models: list[str]) -> dict | None:
     print("🧠 Phase 1 Writer: Research → Draft → Refine...")
@@ -577,29 +575,32 @@ def generate_viral_script(sota_models: list[str]) -> dict | None:
     {
       "speaker": "narrator",
       "style_instruction": "Hushed whisper, building dread.",
-      "acting_text": "He was found on the beach. <break time='1.2s'/> No wallet. No name. <emphasis level='strong'>No identity.</emphasis>",
-      "clean_text": "He was found on the beach. No wallet. No name. No identity."
+      "acting_text": "When detectives flipped over the dead man's collar in 1948, <break time='1.2s'/> they found a secret pocket. <emphasis level='strong'>And no identity.</emphasis>",
+      "clean_text": "When detectives flipped over the dead man's collar in 1948, they found a secret pocket. And no identity."
     },
     {
       "speaker": "document",
       "style_instruction": "Cold, flat, official — reading from a coroner report.",
-      "acting_text": "<prosody rate='slow' pitch='-10%'>Cause of death: unknown. Identity: unknown. Purpose: unknown.</prosody>",
-      "clean_text": "Cause of death: unknown. Identity: unknown. Purpose: unknown."
+      "acting_text": "<prosody rate='slow' pitch='-10%'>Coroner report note: cause of death undetectable. All clothing tags removed.</prosody>",
+      "clean_text": "Coroner report note: cause of death undetectable. All clothing tags removed."
     },
     {
       "speaker": "witness",
       "style_instruction": "Quietly stunned, personal — quoting a detective who worked the case.",
-      "acting_text": "The detective told me, <break time='0.6s'/> <emphasis level='strong'>'In thirty years, I never saw anything like it.'</emphasis>",
-      "clean_text": "The detective told me, in thirty years, I never saw anything like it."
+      "acting_text": "The lead investigator looked at me and said, <break time='0.6s'/> <emphasis level='strong'>'Someone erased this man from existence.'</emphasis>",
+      "clean_text": "The lead investigator looked at me and said, 'Someone erased this man from existence.'"
     }
   ]
 }"""
 
     stage1_prompt = f"""
-You are the writer for "COLD CASE ARCHIVE" — a YouTube Shorts channel run by a former homicide detective turned investigative journalist.
-Your voice is world-weary, precise, and quietly furious.
-You do not sensationalize. You state facts and let the horror speak for itself.
-You expose what investigators got WRONG and what witness accounts directly contradicted official reports.
+You are an investigative journalist and former homicide detective who uncovers forgotten cold cases.
+CRITICAL PERSONA INSTRUCTION: DO NOT WRITE LIKE WIKIPEDIA, AN ENCYCLOPEDIA, OR AN AI OVERVIEW.
+NEVER start with generic statements like "In [year], [name] was found dead..." or "This is the story of..."
+
+INSTEAD: Open directly inside an impossible physical detail, a shocking crime scene discovery, or a witness contradiction.
+- BANNED: "In 1948, an unidentified man was found on Somerton Beach."
+- REQUIRED: "When detectives flipped over the dead man’s collar in 1948, they found something that shouldn't exist."
 
 CASE NAME TO CENTER: {case_name}
 
@@ -612,25 +613,24 @@ BANNED CASES (do NOT write about these):
 {past_topics if past_topics else "(none yet)"}
 
 ━━━━ PSYCHOLOGICAL PACING RULES ━━━━
-LINE 1  — PATTERN INTERRUPT: Open with the single most impossible confirmed fact. Add the human cost or consequence if it sharpens the hook. No intro.
-LINES 2–5 — ESCALATION: Short, punchy, increasingly specific. Every line must add new information.
-LINES 6–8 — THE CONTRADICTION (MANDATORY): State what official records said. Immediately follow with what witnesses or physical evidence actually showed. This is why it was never solved.
-LINES 9–10 — THE IMPOSSIBLE DETAIL: The fact that defied forensic logic, physics, or all expert explanation.
-FINAL LINE — PERFECT LOOP: Circle back to the first word, image, or emotional wound from Line 1.
+LINE 1  — PATTERN INTERRUPT: Start directly inside a visceral physical observation or forensic anomaly. No intro.
+LINES 2–5 — ESCALATION: Short, punchy, increasingly specific. Every line adds concrete physical facts.
+LINES 6–8 — THE CONTRADICTION (MANDATORY): State what official records claimed. Follow with what witness accounts or forensic photos ACTUALLY proved.
+LINES 9–10 — THE IMPOSSIBLE DETAIL: The fact that defied logic, physics, or expert explanation.
+FINAL LINE — PERFECT LOOP: Circle back to the first word or concept of Line 1.
 
 ━━━━ MULTI-VOICE DIRECTION ━━━━
 Use "speaker" field to assign each line one of these voices:
-  "narrator"  — main storytelling (world-weary detective voice, most lines)
-  "document"  — reading official police, coroner, or government reports (cold, bureaucratic)
-  "witness"   — quoting what investigators, witnesses, or experts actually said (personal, stunned)
-Use each voice at least once. Never use "document" twice in a row.
+  "narrator"  — main storytelling (gritty detective persona, most lines)
+  "document"  — official police, coroner, or government records (cold, bureaucratic)
+  "witness"   — actual quote from investigator, witness, or expert (stunned, personal)
+Use each voice at least once.
 
 ━━━━ SSML ACTING TAGS ━━━━ (inside acting_text only — never in clean_text)
   <break time="1s"/>                       pause before a reveal
   <emphasis level="strong">WORD</emphasis> hit the word hard without shouting
   <prosody rate="slow" pitch="-15%">       maximum dread, slower delivery
   <prosody rate="fast">                    rapid factual escalation
-Use micro-pauses before contradiction lines and on the final reveal.
 
 ━━━━ BANNED CLICHÉS ━━━━
 "Dive into" / "chilling reminder" / "Some say" / "Will we ever know?" / "Buckle up" / "In the annals of history"
@@ -639,9 +639,6 @@ Use micro-pauses before contradiction lines and on the final reveal.
 - combined clean_text word count: 130–160 words
 - 8 to 12 total line objects
 - era field must be: "{era}"
-- First line must feel immediate and specific, never generic.
-- Prefer concrete nouns, dates, locations, evidence, and witness language.
-- Keep the final line haunting and circular, not explanatory.
 
 Return ONLY valid JSON exactly matching this format:
 {template}
@@ -703,17 +700,16 @@ Return ONLY valid JSON exactly matching this format:
             for l in script_data["lines"]
         )
         refine_prompt = f"""You are a veteran documentary script editor.
-Below is a first draft of a true crime script. Make it 30% more cinematic WITHOUT adding new facts.
+Below is a first draft of a true crime script. Make it 30% more visceral WITHOUT adding new facts.
 
 FIRST DRAFT:
 {raw_lines}
 
 EDITING RULES:
-1. Rewrite the weakest or most generic sentence to be more visceral and specific.
-2. Keep the opening immediate; if the first line feels abstract, compress it.
+1. Ensure the opening line feels like a first-person detective finding physical evidence, NOT a summary.
+2. Eliminate any sentence that sounds like an encyclopedia.
 3. Preserve speaker assignments and the contradiction structure.
 4. Ensure the final line loops back to the first word or concept of the opening line.
-5. Keep total word count within ±12 words of the original draft.
 
 Return ONLY a numbered list of revised clean_text lines:
 1. [revised line]
@@ -778,7 +774,7 @@ MANDATORY TEXTURE FOR EVERY AI PROMPT — append this to every ai_prompt:
 "{era_texture}"
 
 SHOT DESIGN RULES:
-1. asset_type MUST be "ai" for 95% of shots. AI recreations (e.g., "macro shot of a rusted key", "top-down view of redacted police files") look 100x better than random archive searches.
+1. asset_type MUST be "ai" for 95% of shots. AI recreations look 100x better than random archive searches.
 2. asset_type CAN be "archive" ONLY for highly specific, globally known historical figures or locations.
 3. asset_type CAN be "stock" for abstract mood elements.
 4. Every visual must carry one clear hero object.
@@ -1191,7 +1187,6 @@ def fetch_atmospheric_b_roll(duration: float, filename: str = "temp_atmosphere.m
 
 
 def fetch_texture_flash_video(index: int, filename: str) -> bool:
-    """Fetches high-contrast tactile b-roll to use as palate-cleansing transition flashes."""
     print(f"🎞️  Fetching Texture Flash {index} (Pexels)...")
     if not PEXELS_KEY: return False
     queries = ["scratching texture", "film burn", "flickering film", "distortion glitch", "macro noise"]
@@ -1285,7 +1280,7 @@ def add_stinger_sfx(audio_clip, text: str):
 
 
 # ═══════════════════════════════════════════════════════════
-#  NETFLIX KARAOKE SUBTITLE SYSTEM (KINETIC UPGRADE)
+#  NETFLIX KARAOKE SUBTITLE SYSTEM (KINETIC OPTICAL GLOW)
 # ═══════════════════════════════════════════════════════════
 def get_subtitle_font(size: int = 60):
     candidates = [
@@ -1310,10 +1305,6 @@ def make_karaoke_frame(
     active_idx: int,
     video_width: int
 ) -> PIL.Image.Image:
-    """
-    Renders a transparent (RGBA) PIL frame with a multi-pass compositing system.
-    Generates a heavy neon optical glow behind the active word.
-    """
     frame_h = 160
     img = PIL.Image.new("RGBA", (video_width, frame_h), (0, 0, 0, 0))
     glow_layer = PIL.Image.new("RGBA", (video_width, frame_h), (0, 0, 0, 0))
@@ -1349,7 +1340,7 @@ def make_karaoke_frame(
 
     x = (video_width - total_w) // 2
 
-    # ── PASS 1: Generate the Optical Glow Layer ──
+    # ── PASS 1: Generate Optical Glow ──
     temp_x = x
     for i, w in enumerate(words):
         is_active = (i == active_idx)
@@ -1359,7 +1350,6 @@ def make_karaoke_frame(
             text_h = bbox[3] - bbox[1]
             y = (frame_h - text_h) // 2
             
-            # Draw an oversized, thick stroke in pure neon yellow
             glow_draw.text(
                 (temp_x, y), 
                 w["word"], 
@@ -1370,19 +1360,15 @@ def make_karaoke_frame(
             )
         temp_x += widths[i]
 
-    # Apply intense Gaussian Blur to diffuse the yellow text into a true glow
     glow_layer = glow_layer.filter(PIL.ImageFilter.GaussianBlur(radius=7))
-    
-    # Flatten the glow onto the main transparent frame
     img = PIL.Image.alpha_composite(img, glow_layer)
-    draw = PIL.ImageDraw.Draw(img) # Re-init drawer onto the newly composited image
+    draw = PIL.ImageDraw.Draw(img)
 
-    # ── PASS 2: Render the Core Typography ──
+    # ── PASS 2: Render Core Typography ──
     for i, w in enumerate(words):
         is_active = (i == active_idx)
         fn = fn_active if is_active else fn_normal
         
-        # Active text punches hard in stark white; inactive text is pushed back via opacity
         fill = (255, 255, 255, 255) if is_active else (255, 255, 255, 170)
         
         bbox = draw.textbbox((0, 0), w["word"], font=fn)
@@ -1779,11 +1765,20 @@ def main_pipeline() -> tuple:
         acc_time += audio_clips[i].duration
         cut_times.append(acc_time)
 
+    # Fetch 2 stock transition flashes
     flash_pool = []
     for i in range(2):
         fname = f"temp_flash_{i}.mp4"
         if fetch_texture_flash_video(i, fname):
             flash_pool.append(fname)
+
+    # 📌 GENERATE PAUSE-BAIT MICRO-CLUE IMAGE
+    pause_bait_file = "temp_pause_bait.jpg"
+    pause_bait_prompt = (
+        f"Top-down macro extreme close up of classified police document regarding {case_name}, "
+        "dense tiny handwritten redacted text, official rubber stamps, yellowed paper, high details"
+    )
+    has_pause_bait = fetch_cloudflare_image(pause_bait_prompt, pause_bait_file)
 
     visual_clips = []
     num_shots = len(visual_dirs)
@@ -1866,6 +1861,24 @@ def main_pipeline() -> tuple:
         
         if flash_clips:
             final_video = CompositeVideoClip([final_video] + flash_clips)
+
+        # 📌 INJECT 0.35s PAUSE-BAIT MICRO-CLUE
+        if has_pause_bait and os.path.exists(pause_bait_file) and cut_times:
+            try:
+                # Target the middle cut time for maximum curiosity impact
+                target_cut = cut_times[len(cut_times) // 2]
+                pb_clip = (ImageClip(pause_bait_file)
+                           .resize(height=VIDEO_HEIGHT))
+                if pb_clip.w < VIDEO_WIDTH:
+                    pb_clip = pb_clip.resize(width=VIDEO_WIDTH)
+                pb_clip = (pb_clip.crop(x_center=pb_clip.w/2, y_center=pb_clip.h/2,
+                                       width=VIDEO_WIDTH, height=VIDEO_HEIGHT)
+                           .set_start(target_cut)
+                           .set_duration(0.35))
+                final_video = CompositeVideoClip([final_video, pb_clip])
+                print("🎯 Pause-Bait micro-clue injected successfully!")
+            except Exception as e:
+                print(f"⚠️ Pause-bait injection error: {e}")
 
         final_video = final_video.set_audio(master_voice)
 
