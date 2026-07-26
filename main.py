@@ -1,15 +1,15 @@
 """
-COLD CASE ARCHIVE — Automated Documentary Pipeline v3.6 (The Pause-Bait & Persona Upgrade)
+COLD CASE ARCHIVE — Automated Documentary Pipeline v3.7 (Micro-Foley Upgrade)
 ========================================================================================
-Upgrades vs v3.5:
+Upgrades vs v3.6:
   1. Dynamic Visual Pacing — Shot durations match individual audio line durations.
   2. Seamless Loop Architecture — Removed static end screen for algorithmic replay.
   3. Audio Ducking (Tape Stop) — Dynamically drops background music before key reveals.
   4. Advanced B-Roll Texturing — Tactile stock flashes precisely on dialogue cuts.
   5. Kinetic Subtitles — Dual-pass rendering with optical yellow/white glow.
   6. First-Person Detective Persona — Rewrote script engine to eliminate Wiki tone.
-  7. "Pause-Bait" Micro-Clues — Injects 0.35s hyper-detailed evidence flashes to 
-     force user pauses/rewinds and spike retention metrics past 100%.
+  7. "Pause-Bait" Micro-Clues — Injects 0.35s hyper-detailed evidence flashes.
+  8. Cut-Triggered Micro-Foley — Injects subtle whooshes/clicks precisely on visual cuts.
 """
 
 import os, random, time, json, glob, math, base64, urllib.parse, re
@@ -101,7 +101,7 @@ ERA_STYLES = {
 }
 
 # ─────────────────────────────────────────────────────────
-#  CINEMATIC STINGERS
+#  CINEMATIC STINGERS & MICRO-FOLEY
 # ─────────────────────────────────────────────────────────
 SFX_KEYWORD_MAP = {
     "knock":   "knock.mp3",
@@ -129,6 +129,14 @@ STINGER_MAP = {
     "disappeared":     "reverb_hit.mp3",
     "without a trace": "deep_impact.mp3",
 }
+
+MICRO_SFX_POOL = [
+    "whoosh.mp3", 
+    "tape_click.mp3", 
+    "camera_shutter.mp3", 
+    "paper_slide.mp3", 
+    "film_flutter.mp3"
+]
 
 # ─────────────────────────────────────────────────────────
 #  VARIABLE VIDEO LENGTHS
@@ -168,9 +176,8 @@ def save_new_topic(case_name: str):
 
 
 # ═══════════════════════════════════════════════════════════
-#  GLOBAL SOTA INTELLIGENCE — self-selecting best free model
+#  GLOBAL SOTA INTELLIGENCE
 # ═══════════════════════════════════════════════════════════
-
 CHANNEL_MEMORY_FILE = "channel_memory.json"
 
 def _clean_text_snippet(text: str) -> str:
@@ -543,7 +550,7 @@ Requirements:
 
 
 # ═══════════════════════════════════════════════════════════
-#  THE WRITER (FIRST-PERSON DETECTIVE PERSONA UPGRADE)
+#  THE WRITER 
 # ═══════════════════════════════════════════════════════════
 def generate_viral_script(sota_models: list[str]) -> dict | None:
     print("🧠 Phase 1 Writer: Research → Draft → Refine...")
@@ -1747,11 +1754,6 @@ def main_pipeline() -> tuple:
         print("❌ No audio clips generated.")
         return None, None, None, None, None
 
-    master_voice = concatenate_audioclips(audio_clips)
-    
-    if stinger_clips:
-        master_voice = CompositeAudioClip([master_voice] + stinger_clips)
-
     # ══ PHASE 3: VISUAL PIPELINE (DYNAMIC BEAT-MATCHED PACING) ══
     required_images = len(audio_clips)
     visual_dirs     = generate_cinematographer_prompts(
@@ -1764,6 +1766,26 @@ def main_pipeline() -> tuple:
     for i in range(len(audio_clips) - 1):
         acc_time += audio_clips[i].duration
         cut_times.append(acc_time)
+
+    # 🔊 GENERATE MICRO-FOLEY TRANSITIONS (UPGRADE 8)
+    transition_sfx_clips = []
+    for ct in cut_times:
+        if random.random() > 0.3: # 70% chance to play a transition sound
+            sfx_file = random.choice(MICRO_SFX_POOL)
+            path = os.path.join("sfx", sfx_file)
+            if os.path.exists(path):
+                try:
+                    # Place slightly before the cut to lead into the visual change
+                    t_clip = AudioFileClip(path).volumex(0.4).set_start(max(0, ct - 0.15))
+                    transition_sfx_clips.append(t_clip)
+                except Exception: pass
+
+    # Assemble the master timeline with all auditory layers
+    master_voice = concatenate_audioclips(audio_clips)
+    
+    all_sfx_overlays = stinger_clips + transition_sfx_clips
+    if all_sfx_overlays:
+        master_voice = CompositeAudioClip([master_voice] + all_sfx_overlays)
 
     # Fetch 2 stock transition flashes
     flash_pool = []
