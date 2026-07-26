@@ -1,11 +1,12 @@
 """
-COLD CASE ARCHIVE — Automated Documentary Pipeline v3.3 (Tape Stop Upgrade)
+COLD CASE ARCHIVE — Automated Documentary Pipeline v3.4 (Tactile B-Roll Upgrade)
 ========================================================================================
-Upgrades vs v3.2:
+Upgrades vs v3.3:
   1. Dynamic Visual Pacing — Shot durations match individual audio line durations.
   2. Seamless Loop Architecture — Removed static end screen for algorithmic replay.
-  3. Audio Ducking (Tape Stop) — Dynamically tracks contradiction/witness beats and 
-     drops the background music to absolute silence just before the line hits to build tension.
+  3. Audio Ducking (Tape Stop) — Dynamically drops background music before key reveals.
+  4. Advanced B-Roll Texturing — Injects 0.5s full-screen tactile stock video flashes 
+     (film burns, macro scratches) precisely on dialogue cuts to reset visual palate.
 """
 
 import os, random, time, json, glob, math, base64, urllib.parse, re
@@ -64,7 +65,6 @@ CHANNEL_HANDLE      = "@TheGlitchArchive"
 TOPICS_FILE         = "topics.txt"
 VIDEO_WIDTH         = 720
 VIDEO_HEIGHT        = 1280
-IMAGE_TRANSITION_T  = 3.0        # seconds per image slot (Retained for legacy fallback)
 CROSSFADE_DUR       = 0.4        # seconds for cross-dissolve overlap
 
 # ─────────────────────────────────────────────────────────
@@ -176,9 +176,6 @@ def _clean_text_snippet(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
 
 def _score_title_candidate(title: str, case_name: str = "") -> int:
-    """
-    Scores a title for curiosity, brevity, and spoiler avoidance.
-    """
     t = _clean_text_snippet(title)
     tl = t.lower()
     score = 0
@@ -186,7 +183,6 @@ def _score_title_candidate(title: str, case_name: str = "") -> int:
     if not t:
         return -999
 
-    # Length sweet spot for Shorts
     if 28 <= len(t) <= 44:
         score += 6
     elif len(t) <= 50:
@@ -194,7 +190,6 @@ def _score_title_candidate(title: str, case_name: str = "") -> int:
     else:
         score -= 3
 
-    # Curiosity-gap language
     curiosity_terms = [
         "what", "why", "how", "didn't exist", "vanished", "missing",
         "found", "unanswered", "unknown", "no name", "no identity",
@@ -203,7 +198,6 @@ def _score_title_candidate(title: str, case_name: str = "") -> int:
     if any(term in tl for term in curiosity_terms):
         score += 4
 
-    # Spoiler penalty
     spoiler_terms = [
         "explained", "answered", "solved", "mystery explained", "case file",
         "full story", "timeline", "inside", "complete"
@@ -211,15 +205,12 @@ def _score_title_candidate(title: str, case_name: str = "") -> int:
     if any(term in tl for term in spoiler_terms):
         score -= 5
 
-    # Avoid directly repeating the case name
     if case_name and case_name.lower() in tl:
         score -= 4
 
-    # Strong first token / clean punctuation
     if not any(ch in t for ch in [":", "-", "|"]):
         score += 1
 
-    # Slight reward for being specific but not too obvious
     if any(term in tl for term in ["man", "woman", "boy", "girl", "file", "body", "note"]):
         score += 1
 
@@ -240,9 +231,6 @@ def _pick_best_title(candidates: list[str], case_name: str = "") -> str:
 
 
 def build_retention_profile(script_data: dict, case_name: str = "") -> dict:
-    """
-    Annotates the script with beat-level intent without changing the core story.
-    """
     lines = script_data.get("lines", []) if isinstance(script_data, dict) else []
     n = len(lines)
     if n == 0:
@@ -447,11 +435,9 @@ def ask_llm(system_instruction: str, prompt: str, sota_models: list[str]) -> str
 #  LIVE RESEARCH ENGINE
 # ═══════════════════════════════════════════════════════════
 def scrape_wikipedia(case_name: str) -> str:
-    """Fetches the full Wikipedia article plain-text extract for a case."""
     print(f"📚 Wikipedia → {case_name}")
     ua = {"User-Agent": "GlitchArchiveBot/2.0 (educational documentary)"}
     try:
-        # Step 1: Search
         sr = requests.get(
             "https://en.wikipedia.org/w/api.php",
             params={"action": "query", "format": "json",
@@ -463,7 +449,6 @@ def scrape_wikipedia(case_name: str) -> str:
             return ""
         title = results[0]["title"]
 
-        # Step 2: Full extract
         er = requests.get(
             "https://en.wikipedia.org/w/api.php",
             params={"action": "query", "format": "json", "prop": "extracts",
@@ -474,14 +459,13 @@ def scrape_wikipedia(case_name: str) -> str:
         pages = er.json().get("query", {}).get("pages", {})
         for _, page in pages.items():
             extract = page.get("extract", "")
-            return extract[:4000]          # enough for strong research, not token-greedy
+            return extract[:4000]
     except Exception as e:
         print(f"⚠️  Wikipedia failed: {e}")
     return ""
 
 
 def scrape_google_news_rss(case_name: str) -> str:
-    """Fetches recent headlines via Google News RSS — no API key needed."""
     print(f"📰 Google News RSS → {case_name}")
     try:
         q   = urllib.parse.quote(case_name)
@@ -507,8 +491,6 @@ def scrape_google_news_rss(case_name: str) -> str:
 
 
 def detect_era(text: str) -> str:
-    """Extracts the decade of a case from any text block."""
-    import re
     years = re.findall(r"\b(1[89]\d{2}|20[012]\d)\b", text)
     if not years:
         return "unknown"
@@ -525,11 +507,6 @@ def propose_case_and_research(
     past_topics: str,
     sota_models: list[str]
 ) -> tuple[str, str, str]:
-    """
-    1. Asks an LLM to propose one specific, obscure, real case.
-    2. Scrapes Wikipedia + Google News for that case.
-    3. Returns (case_name, research_brief, era).
-    """
     print(f"🔬 Phase 0 Research Engine → niche: '{niche}'")
 
     avoid = (f"CRITICAL — Do NOT suggest any case from this list:\n{past_topics}\n"
@@ -568,9 +545,7 @@ Requirements:
 
 # ═══════════════════════════════════════════════════════════
 #  THE WRITER
-#  Research-grounded · Channel persona · Multi-draft · Dual voice
 # ═══════════════════════════════════════════════════════════
-
 def generate_viral_script(sota_models: list[str]) -> dict | None:
     print("🧠 Phase 1 Writer: Research → Draft → Refine...")
 
@@ -769,7 +744,6 @@ Return ONLY a numbered list of revised clean_text lines:
 # ═══════════════════════════════════════════════════════════
 #  AI-FIRST CINEMATOGRAPHER & ASSET ROUTING
 # ═══════════════════════════════════════════════════════════
-
 def generate_cinematographer_prompts(
     script_text: str,
     required_images: int,
@@ -804,8 +778,8 @@ MANDATORY TEXTURE FOR EVERY AI PROMPT — append this to every ai_prompt:
 
 SHOT DESIGN RULES:
 1. asset_type MUST be "ai" for 95% of shots. AI recreations (e.g., "macro shot of a rusted key", "top-down view of redacted police files") look 100x better than random archive searches.
-2. asset_type CAN be "archive" ONLY for highly specific, globally known historical figures or locations (e.g., "Alcatraz"). BANNED: Do not use "archive" for generic nouns like "analyst", "blueprint", "gears".
-3. asset_type CAN be "stock" for abstract mood elements (e.g. "dark rainy window").
+2. asset_type CAN be "archive" ONLY for highly specific, globally known historical figures or locations.
+3. asset_type CAN be "stock" for abstract mood elements.
 4. Every visual must carry one clear hero object.
 5. Rotate shot types naturally: Extreme Close-Up, Wide Establishing, Over-the-Shoulder, Dutch Angle.
 6. BANNED: legible text, signs, numbers, captions, or interface overlays.
@@ -887,7 +861,6 @@ def fetch_archive_image(query: str, filename: str) -> bool:
     clean = " ".join(query.split()[:4])
     ua    = {"User-Agent": "GhostBot/2.0 (Educational Documentary)"}
 
-    # Wikipedia pageimages
     try:
         r = requests.get(
             "https://en.wikipedia.org/w/api.php",
@@ -904,7 +877,6 @@ def fetch_archive_image(query: str, filename: str) -> bool:
                 if os.path.getsize(filename) > 1000: return True
     except Exception: pass
 
-    # Google CSE
     if SEARCH_API_KEY and GOOGLE_CSE_ID:
         try:
             params = {"q": f"{clean} evidence photo", "cx": GOOGLE_CSE_ID,
@@ -919,7 +891,6 @@ def fetch_archive_image(query: str, filename: str) -> bool:
                 if os.path.getsize(filename) > 1000: return True
         except Exception: pass
 
-    # Internet Archive
     try:
         docs = requests.get(
             "https://archive.org/advancedsearch.php",
@@ -1085,7 +1056,6 @@ def generate_depth_map(image_path: str) -> str | None:
 
 
 def _ease_in_out(progress: float) -> float:
-    """Cosine S-curve — makes camera feel operated by a human, not a script."""
     return (1 - math.cos(progress * math.pi)) / 2
 
 
@@ -1123,7 +1093,6 @@ def apply_parallax_effect(
 
 
 def get_image_clip(asset_type: str, search_query: str, ai_prompt: str, duration: float, index: int):
-    """Full Titanium Pipeline + eased parallax + adaptive cross-dissolve."""
     fname = f"temp_img_{index}.jpg"
     ok = False
     
@@ -1172,7 +1141,6 @@ def get_image_clip(asset_type: str, search_query: str, ai_prompt: str, duration:
                 duration=duration
             )
         else:
-            # Ken Burns with eased zoom
             def zoom_func(t):
                 p     = t / max(duration, 0.1)
                 eased = _ease_in_out(min(max(p, 0.0), 1.0))
@@ -1183,7 +1151,6 @@ def get_image_clip(asset_type: str, search_query: str, ai_prompt: str, duration:
                 width=VIDEO_WIDTH, height=VIDEO_HEIGHT
             )
 
-        # Dynamic safeguard on fade duration to prevent visual crash on extremely fast audio lines
         safe_fade = min(CROSSFADE_DUR, max(0.1, duration / 3.0))
         clip = clip.fx(fadein, safe_fade).fx(fadeout, safe_fade)
         return clip
@@ -1206,6 +1173,32 @@ def fetch_atmospheric_b_roll(duration: float, filename: str = "temp_atmosphere.m
             "https://api.pexels.com/videos/search",
             headers={"Authorization": PEXELS_KEY},
             params={"query": random.choice(queries), "per_page": 3, "orientation": "portrait"},
+            timeout=30
+        )
+        if r.status_code == 200:
+            videos = r.json().get("videos", [])
+            if videos:
+                video  = random.choice(videos)
+                files  = [f for f in video.get("video_files", []) if f.get("quality") == "hd"] \
+                         or video.get("video_files", [])
+                if files:
+                    with open(filename, "wb") as f:
+                        f.write(requests.get(files[0]["link"], timeout=45).content)
+                    return True
+    except Exception: pass
+    return False
+
+
+def fetch_texture_flash_video(index: int, filename: str) -> bool:
+    """Fetches high-contrast tactile b-roll to use as palate-cleansing transition flashes."""
+    print(f"🎞️  Fetching Texture Flash {index} (Pexels)...")
+    if not PEXELS_KEY: return False
+    queries = ["scratching texture", "film burn", "flickering film", "distortion glitch", "macro noise"]
+    try:
+        r = requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": PEXELS_KEY},
+            params={"query": random.choice(queries), "per_page": 5, "orientation": "portrait"},
             timeout=30
         )
         if r.status_code == 200:
@@ -1275,7 +1268,6 @@ def add_sfx(audio_clip, text: str):
 
 
 def add_stinger_sfx(audio_clip, text: str):
-    """Adds a cinematic impact stinger 0.3s into the clip on key narrative beats."""
     text_l = text.lower()
     for kw, sfx_file in STINGER_MAP.items():
         if kw in text_l:
@@ -1317,16 +1309,10 @@ def make_karaoke_frame(
     active_idx: int,
     video_width: int
 ) -> PIL.Image.Image:
-    """
-    Renders a transparent (RGBA) PIL frame.
-    FIXED: Dynamically shrinks font size to prevent overlapping, 
-    and uses native stroke for crisp, readable text.
-    """
     frame_h = 160
     img = PIL.Image.new("RGBA", (video_width, frame_h), (0, 0, 0, 0))
     draw = PIL.ImageDraw.Draw(img)
 
-    # Base font sizes
     norm_size = 54
     act_size = 68
 
@@ -1380,7 +1366,6 @@ def make_karaoke_frame(
     return img
 
 def _pil_rgba_to_moviepy(pil_image: PIL.Image.Image, duration: float):
-    """Converts a PIL RGBA image to a MoviePy clip with alpha mask."""
     rgb_arr   = np.array(pil_image.convert("RGB"))
     alpha_arr = np.array(pil_image.split()[3]).astype(float) / 255.0
     clip      = ImageClip(rgb_arr, duration=duration)
@@ -1389,9 +1374,6 @@ def _pil_rgba_to_moviepy(pil_image: PIL.Image.Image, duration: float):
 
 
 def add_dynamic_subtitles(video_clip, audio_path: str):
-    """
-    Netflix-style karaoke subtitles with natural phrase breaks.
-    """
     print("📝 Generating karaoke subtitles...")
 
     try:
@@ -1698,7 +1680,7 @@ def main_pipeline() -> tuple:
     # ══ PHASE 2: MULTI-VOICE AUDIO ASSEMBLY ══
     audio_clips     = []
     stinger_clips   = []
-    tape_stop_times = [] # NEW: Tracks timestamps for dynamic audio ducking
+    tape_stop_times = []
     current_time    = 0.0
     full_script_txt = ""
 
@@ -1708,8 +1690,6 @@ def main_pipeline() -> tuple:
         style       = line.get("style_instruction", "Measured, authoritative narrator")
         speaker     = line.get("speaker", "narrator")
 
-        # Track absolute timestamps for the tape stop effect
-        # We ignore the very first second (t <= 1.0) so the intro doesn't glitch out
         if current_time > 1.0 and (line.get("beat") == "contradiction" or speaker == "witness"):
             tape_stop_times.append(current_time)
 
@@ -1722,21 +1702,19 @@ def main_pipeline() -> tuple:
             clip = AudioFileClip(wav)
             clip = add_sfx(clip, clean_text)
             
-            # Map stingers to the absolute master timeline instead of the individual clip
             text_l = clean_text.lower()
             for kw, sfx_file in STINGER_MAP.items():
                 if kw in text_l:
                     path = os.path.join("sfx", sfx_file)
                     if os.path.exists(path):
                         try:
-                            # Start the stinger slightly before the end of the current clip
                             stinger_start = current_time + min(0.3, max(0.0, clip.duration - 0.6))
                             stinger = (AudioFileClip(path)
                                        .volumex(0.38)
                                        .set_start(stinger_start))
                             stinger_clips.append(stinger)
                         except Exception: pass
-                    break # Only one stinger per line
+                    break 
 
             audio_clips.append(clip)
             current_time += clip.duration
@@ -1747,38 +1725,45 @@ def main_pipeline() -> tuple:
 
     master_voice = concatenate_audioclips(audio_clips)
     
-    # Composite the long reverb stingers OVER the master track so they bleed naturally underneath the next lines
     if stinger_clips:
         master_voice = CompositeAudioClip([master_voice] + stinger_clips)
 
     # ══ PHASE 3: VISUAL PIPELINE (DYNAMIC BEAT-MATCHED PACING) ══
-    # Align shot count directly with spoken dialogue lines
     required_images = len(audio_clips)
     visual_dirs     = generate_cinematographer_prompts(
         full_script_txt, required_images, sota_models, era=era
     )
     first_image_path = "temp_img_0.jpg"
 
-    # Dynamically scale each image clip duration to match its corresponding audio line duration
+    # Track absolute timestamps of dialogue cuts to overlay textural flashes
+    cut_times = []
+    acc_time = 0.0
+    for i in range(len(audio_clips) - 1):
+        acc_time += audio_clips[i].duration
+        cut_times.append(acc_time)
+
+    # Pre-fetch 2 highly textural stock videos for transition flashes
+    flash_pool = []
+    for i in range(2):
+        fname = f"temp_flash_{i}.mp4"
+        if fetch_texture_flash_video(i, fname):
+            flash_pool.append(fname)
+
     visual_clips = []
     num_shots = len(visual_dirs)
 
     for i, v in enumerate(visual_dirs):
-        # Fallback if somehow visual_dirs is longer than audio_clips
         if i < len(audio_clips):
             base_dur = audio_clips[i].duration
         else:
             base_dur = master_voice.duration / num_shots
         
-        # Add CROSSFADE_DUR overlap padding to non-final clips so cross-dissolves don't shorten total runtime
         clip_dur = base_dur + CROSSFADE_DUR if i < num_shots - 1 else base_dur
         
-        # Catch trailing stinger duration overhangs on the final clip
         if i == num_shots - 1:
             accumulated_visual_dur = sum(c.duration for c in audio_clips[:i])
             clip_dur = max(clip_dur, master_voice.duration - accumulated_visual_dur)
 
-        # Pass asset_type to ensure AI routing
         clip = get_image_clip(
             v.get("asset_type", "ai"),
             v.get("search_query", ""),
@@ -1794,7 +1779,7 @@ def main_pipeline() -> tuple:
                 visual_clips, method="compose", padding=-CROSSFADE_DUR
             )
             .set_duration(master_voice.duration)
-            .fx(colorx, 0.85)
+            .fx(colorx, 0.85) # High contrast grade applied to base sequence
         )
 
         if fetch_atmospheric_b_roll(master_voice.duration):
@@ -1811,6 +1796,44 @@ def main_pipeline() -> tuple:
                 final_video = CompositeVideoClip([final_video, atm])
             except Exception as e:
                 print(f"⚠️  Atmospheric overlay: {e}")
+
+        # 🎞️ DYNAMIC TACTILE B-ROLL FLASHES OVER CUTS
+        flash_clips = []
+        if flash_pool:
+            FLASH_DUR = 0.5
+            for ct in cut_times:
+                src = random.choice(flash_pool)
+                try:
+                    src_clip = VideoFileClip(src).without_audio()
+                    # Grab a random subclip so the same texture video looks different every time
+                    if src_clip.duration > FLASH_DUR + 0.2:
+                        start_t = random.uniform(0, src_clip.duration - FLASH_DUR)
+                        f_clip = src_clip.subclip(start_t, start_t + FLASH_DUR)
+                    else:
+                        f_clip = src_clip.fx(loop, duration=FLASH_DUR).subclip(0, FLASH_DUR)
+                    
+                    if f_clip.h != VIDEO_HEIGHT or f_clip.w != VIDEO_WIDTH:
+                        f_clip = f_clip.resize(height=VIDEO_HEIGHT)
+                        if f_clip.w < VIDEO_WIDTH:
+                            f_clip = f_clip.resize(width=VIDEO_WIDTH)
+                        f_clip = f_clip.crop(
+                            x_center=f_clip.w/2, y_center=f_clip.h/2,
+                            width=VIDEO_WIDTH, height=VIDEO_HEIGHT
+                        )
+                    
+                    # Exact placement over the seam, with a micro fade to kill harsh rendering artifacts
+                    f_clip = (f_clip
+                              .set_start(max(0, ct - FLASH_DUR/2))
+                              .set_duration(FLASH_DUR)
+                              .fx(fadein, 0.05).fx(fadeout, 0.05))
+                    
+                    flash_clips.append(f_clip)
+                except Exception as e:
+                    print(f"⚠️ Flash processing error: {e}")
+        
+        # Apply the flashes on top of the atmospheric overlay to keep them bright
+        if flash_clips:
+            final_video = CompositeVideoClip([final_video] + flash_clips)
 
         final_video = final_video.set_audio(master_voice)
 
@@ -1838,16 +1861,12 @@ def main_pipeline() -> tuple:
                 duration=final_video.duration
             )
             
-            # 🎵 DYNAMIC TAPE STOP AUDIO DUCKING
             def duck_volume(t):
-                # Ensure t is processed as a numpy array for MoviePy's internal mapping
                 t_arr = np.asarray(t)
                 vol = np.ones_like(t_arr, dtype=float) * 0.25
                 for st in tape_stop_times:
-                    # Drop volume to dead 0.0 starting 0.8s before the twist, and holding for 0.15s into it
                     mask = (t_arr >= max(0, st - 0.8)) & (t_arr <= st + 0.15)
                     vol[mask] = 0.0
-                # Return correctly shaped scalar or array depending on MoviePy's query
                 return vol if np.ndim(t_arr) > 0 else float(vol)
 
             bg = bg.volumex(duck_volume)
@@ -1874,6 +1893,7 @@ def main_pipeline() -> tuple:
         thumbnail_path = generate_thumbnail(case_name, first_image_path)
 
     try:
+        # NOTE: glob.glob("temp_*.mp4") inherently cleans up temp_flash_X.mp4 files generated above
         for f in (glob.glob("temp_*.wav") + glob.glob("temp_*.jpg")
                   + glob.glob("temp_*.mp4") + glob.glob("temp_*.mp3")):
             if f != output_file:
