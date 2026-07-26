@@ -1,11 +1,11 @@
 """
-COLD CASE ARCHIVE — Automated Documentary Pipeline v3.2 (Seamless Loop Upgrade)
+COLD CASE ARCHIVE — Automated Documentary Pipeline v3.3 (Tape Stop Upgrade)
 ========================================================================================
-Upgrades vs v3.0:
+Upgrades vs v3.2:
   1. Dynamic Visual Pacing — Shot durations match individual audio line durations.
-  2. Seamless Loop Architecture — Completely removed the static end screen. 
-     The final render now cuts on the exact frame the audio finishes, forcing an 
-     instant, undetectable replay of the video to farm algorithmic watch time.
+  2. Seamless Loop Architecture — Removed static end screen for algorithmic replay.
+  3. Audio Ducking (Tape Stop) — Dynamically tracks contradiction/witness beats and 
+     drops the background music to absolute silence just before the line hits to build tension.
 """
 
 import os, random, time, json, glob, math, base64, urllib.parse, re
@@ -64,6 +64,7 @@ CHANNEL_HANDLE      = "@TheGlitchArchive"
 TOPICS_FILE         = "topics.txt"
 VIDEO_WIDTH         = 720
 VIDEO_HEIGHT        = 1280
+IMAGE_TRANSITION_T  = 3.0        # seconds per image slot (Retained for legacy fallback)
 CROSSFADE_DUR       = 0.4        # seconds for cross-dissolve overlap
 
 # ─────────────────────────────────────────────────────────
@@ -1697,6 +1698,7 @@ def main_pipeline() -> tuple:
     # ══ PHASE 2: MULTI-VOICE AUDIO ASSEMBLY ══
     audio_clips     = []
     stinger_clips   = []
+    tape_stop_times = [] # NEW: Tracks timestamps for dynamic audio ducking
     current_time    = 0.0
     full_script_txt = ""
 
@@ -1705,6 +1707,11 @@ def main_pipeline() -> tuple:
         acting_text = line.get("acting_text", clean_text)
         style       = line.get("style_instruction", "Measured, authoritative narrator")
         speaker     = line.get("speaker", "narrator")
+
+        # Track absolute timestamps for the tape stop effect
+        # We ignore the very first second (t <= 1.0) so the intro doesn't glitch out
+        if current_time > 1.0 and (line.get("beat") == "contradiction" or speaker == "witness"):
+            tape_stop_times.append(current_time)
 
         voice_name  = VOICE_MAP.get(speaker, base_voice)
 
@@ -1827,13 +1834,29 @@ def main_pipeline() -> tuple:
     if fetch_pixabay_audio(full_script_txt, sota_models):
         try:
             bg = audio_loop(
-                AudioFileClip("temp_bg_music.mp3").volumex(0.25),
+                AudioFileClip("temp_bg_music.mp3"),
                 duration=final_video.duration
             )
+            
+            # 🎵 DYNAMIC TAPE STOP AUDIO DUCKING
+            def duck_volume(t):
+                # Ensure t is processed as a numpy array for MoviePy's internal mapping
+                t_arr = np.asarray(t)
+                vol = np.ones_like(t_arr, dtype=float) * 0.25
+                for st in tape_stop_times:
+                    # Drop volume to dead 0.0 starting 0.8s before the twist, and holding for 0.15s into it
+                    mask = (t_arr >= max(0, st - 0.8)) & (t_arr <= st + 0.15)
+                    vol[mask] = 0.0
+                # Return correctly shaped scalar or array depending on MoviePy's query
+                return vol if np.ndim(t_arr) > 0 else float(vol)
+
+            bg = bg.volumex(duck_volume)
+            
             final_video = final_video.set_audio(
                 CompositeAudioClip([final_video.audio, bg])
             )
-        except Exception: pass
+        except Exception as e: 
+            print(f"⚠️  BG Music overlay failed: {e}")
 
     # ══ RENDER ══
     output_file = "final_video.mp4"
