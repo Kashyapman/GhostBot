@@ -1,24 +1,28 @@
-# GhostBot 👻🤖 (v2.0: The Documentary Pipeline)
-> Autonomous, State-of-the-Art (SOTA) True Crime video generator and multi-platform publisher powered by an LLM Cascade, 2.5D Computer Vision, and GitHub Actions.
+# GhostBot 👻🤖 (v4.0: The Programmatic Documentary Engine)
+> Autonomous, State-of-the-Art (SOTA) high-retention video generator powered by an LLM Cascade, 3D Computer Vision, and psychological watch-time mechanics.
 
-GhostBot is a fully automated, end-to-end video production studio engineered specifically for high-retention True Crime and Mystery content. It has evolved from a simple text-to-video bot into a **programmatic documentary engine**. 
+GhostBot is a fully automated, end-to-end video production studio engineered specifically for high-retention True Crime, Mystery, and Philosophical content. It has evolved from a simple text-to-video bot into a **programmatic documentary engine**. 
 
-Designed to run completely hands-off in the cloud, the bot handles everything from live web research and multi-draft scriptwriting to 2.5D parallax rendering, 5-stage audio mastering, and automated distribution across YouTube, Facebook, and Instagram.
+While standard automation scripts rely on generic stock footage and robotic voiceovers, GhostBot generates cinematic, human-grade edits. Designed to run completely hands-off in the cloud, the bot handles everything from live web research and multi-voice scriptwriting to 3D parallax rendering, dynamic audio ducking, and automated distribution across YouTube and Meta.
 
 ### 🎬 The Final Result: Hands-Free Content
 <img width="1053" height="497" alt="YouTube Uploads Proof" src="https://github.com/user-attachments/assets/d7bed62b-9613-404b-a3bb-62473541c46d" />
-*Fully rendered, highly engaging True Crime videos automatically uploaded and optimized for YouTube and Meta.*
+*Fully rendered, highly engaging videos automatically uploaded and optimized for algorithmic velocity.*
 
 ---
 
-## 🔥 What's New in v2.0
-* **Live Research Engine:** Scrapes Wikipedia and Google News RSS dynamically before writing the script to ensure 100% factual accuracy and historical context.
-* **The "Titanium" Visual Pipeline:** A 4-layer visual engine. Fetches real historical photos (Wiki/Archive/Google) -> falls back to SOTA AI B-Roll (Cloudflare FLUX.1) -> falls back to Stock Footage (Pexels).
-* **2.5D Depth Parallax:** Uses Hugging Face `transformers` (`Depth-Anything-V2-Small-hf`) and OpenCV to generate depth maps, animating flat images into immersive 3D environments with Cosine S-Curve camera easing.
-* **Contextual Matting:** Eliminates the "AI Slop" look by programmatically wrapping images in diegetic borders (vintage Polaroids on a desk, CRT monitor scanlines, cinematic shadows) using `Pillow`.
-* **Netflix-Style Karaoke Subtitles:** Custom-built dynamic font-scaling engine with native Pillow strokes. Highlights the active word in yellow without overlapping or cluttering the screen.
-* **5-Stage Audio Mastering:** Applies true crime podcast EQ (80Hz High-Pass, 12kHz Low-Pass, dynamic compression, and normalization) to Gemini's TTS voices.
-* **Dynamic Music & Stingers:** AI acts as a Music Supervisor, automatically querying Pixabay for the perfect ambient background track, while injecting cinematic impact SFX (booms, static, thuds) at key narrative beats.
+## 🔥 What Makes v4.0 SOTA (State-of-the-Art)?
+GhostBot v4.0 implements advanced psychological retention tactics used by top-tier human editors to drive Average Percentage Viewed (APV) past 100%:
+
+* **The "Titanium" Visual Pipeline:** A 4-layer visual engine. Fetches real historical photos (Wiki/Archive/Google) -> falls back to SOTA AI B-Roll (Cloudflare FLUX.1) -> falls back to tactile Stock Footage (Pexels).
+* **3D Depth Parallax Engine:** Uses Hugging Face `transformers` (`Depth-Anything-V2-Small-hf`) and OpenCV to generate depth maps, animating flat AI images into immersive 3D environments with Cosine S-Curve camera easing.
+* **Contextual Diegetic Matting:** Eliminates the "AI Slop" look by programmatically wrapping images in physical borders (vintage Polaroids, ancient sacred scrolls, police evidence boards, or cinematic shadows) using Pillow.
+* **Dynamic Audio-Visual Pacing:** Destroys the "metronome" effect of standard bots. Visual shot durations are mapped exactly to the millisecond length of the corresponding spoken dialogue line.
+* **Kinetic Optical-Glow Subtitles:** A custom dual-pass rendering engine. Projects a heavy, diffuse neon optical glow (yellow/gold) behind the active spoken word while maintaining stark, high-contrast core typography.
+* **Seamless Infinity Loop Architecture:** Grammatically connects the final spoken sentence to the opening hook, and cuts the video on the exact final audio frame to trigger undetectable viewer replays.
+* **Sacred "Pause-Bait" Micro-Clues:** Injects hyper-detailed, text-dense AI visuals (like classified reports or ancient manuscripts) onto the screen for exactly 0.35 seconds to induce algorithmic re-watches and pauses.
+* **Cut-Triggered Micro-Foley & Audio Ducking:** Mathematically syncs subtle sound effects (whooshes, tape clicks, singing bowls) 0.15s before visual transitions, and drops background music to absolute silence (the "Tape Stop" effect) right before major narrative reveals.
+* **Dynamic Studio Acting:** Passes emotional stage directions directly into Gemini Studio TTS to generate breathless, monotone, or strained vocal performances across multiple character roles.
 
 ---
 
@@ -31,29 +35,30 @@ GhostBot is designed to be a "set-and-forget" system. Instead of relying on loca
 graph TD
     A[GitHub Actions / Cron] -->|Triggers| B(main.py)
     
-    subgraph 1. Research & Writing
+    subgraph 1. Research & Persona Scripting
     C[(topics.txt)] -.->|Checks memory| B
     B -->|Scrape Web| D[Wiki & Google News]
     D -->|Context| E{SOTA LLM Cascade<br>OpenRouter/Gemini}
-    E -->|Drafts & Refines| F[Script JSON]
+    E -->|1st-Person Detective / Guide| F[Script JSON]
     end
 
-    subgraph 2. Multi-Voice Audio
-    F -->|Narrator/Witness| G[neural_voice.py]
-    G -->|Gemini TTS + SSML| H[Raw PCM]
+    subgraph 2. Multi-Voice Audio & Foley
+    F -->|Narrator/Witness/Document| G[neural_voice.py]
+    G -->|Gemini TTS + Stage Directions| H[Raw PCM]
     H -->|5-Stage Pydub EQ| I((Mastered Audio))
+    I -->|Micro-Foley Injection| I2[Cut-Triggered SFX]
     end
     
     subgraph 3. Visuals & Compositing
     F -->|Visual Prompts| J[Titanium Pipeline]
     J -->|Real Photos| K[Google/Archive]
     J -->|AI B-Roll| L[FLUX.1]
-    K & L --> M[Contextual Matting]
+    K & L --> M[Contextual Diegetic Matting]
     M --> N[Depth-Anything Parallax Engine]
     N --> O[MoviePy Renderer]
-    I --> O
-    P[Pixabay / Pexels / SFX] --> O
-    O --> Q((Final Video.mp4))
+    I2 --> O
+    P[Tactile B-Roll / Pause-Bait] --> O
+    O -->|Optical Subtitles & Ducking| Q((Final Video.mp4))
     end
 
     subgraph 4. Distribution
@@ -67,11 +72,11 @@ graph TD
     T & U --> V
 ```
 
-1. **Trigger:** The GitHub Action wakes up at 06:00 and 18:00 UTC.
-2. **Writing:** The LLM Cascade (Llama 3.3 70b / Qwen / Gemini Flash) acts as a Detective, writing a paradox-driven, multi-voice script based on real web data.
-3. **Assembly:** The bot renders SSML audio, fetches images, applies contextual matting, generates depth maps, applies OpenCV 3D parallax, and burns in Karaoke subtitles.
+1. **Trigger:** The GitHub Action wakes up on schedule (e.g., 06:00 and 18:00 UTC).
+2. **Writing:** The LLM Cascade (Llama 3.3 70b / Qwen / Gemini Flash) bypasses Wikipedia-summaries to write visceral, first-person paradox-driven scripts.
+3. **Assembly:** The bot renders emotional audio, fetches images, applies physical matting, generates depth maps, applies OpenCV 3D parallax, ducks audio at key reveals, and burns in dual-pass glowing subtitles.
 4. **Distribution:** The final asset (and a custom-generated PIL thumbnail) is pushed to YouTube. `meta_upload.py` handles Facebook and navigates a 3-tier temporary hosting failsafe (`file.io` → `catbox` → `tmpfiles`) to publish to Instagram.
-5. **Memory Update:** The case is appended to `topics.txt`, committed to the repo by `github-actions[bot]`.
+5. **Memory Update:** The generated topic is appended to `topics.txt`, committed to the repo by `github-actions[bot]`.
 
 ---
 
@@ -87,7 +92,7 @@ If you want to run the core Python engine locally for testing, script generation
 
 2. Install system dependencies (Ubuntu/Debian example):
     ```bash
-    sudo apt-get install ffmpeg libsndfile1 sox imagemagick ghostscript libwebp-dev libjpeg-dev
+    sudo apt-get install ffmpeg libsndfile1 sox imagemagick ghostscript libwebp-dev libjpeg-dev zlib1g-dev libfreetype6-dev
     ```
 
 3. Install the required Python dependencies:
@@ -99,12 +104,12 @@ If you want to run the core Python engine locally for testing, script generation
 For GitHub Actions (or your `.env` file) to run the pipeline successfully, ensure the following keys are configured:
 
 **Core AI & Media Generation:**
-* `GEMINI_API_KEY` - Primary TTS and fallback LLM.
+* `GEMINI_API_KEY` - Primary TTS, Studio Voice Acting, and fallback LLM.
 * `OPENROUTER_API_KEY` - SOTA LLM Cascade (Llama 3.3, Qwen, Mistral).
 * `CLOUDFLARE_ACCOUNT_ID` & `CLOUDFLARE_API_TOKEN` - For FLUX.1 High-End AI Image generation.
 * `SEARCH_API_KEY` & `GOOGLE_CSE_ID` - For scraping real historical photo evidence.
-* `PEXELS_API_KEY` - For cinematic atmospheric overlays (dust, rain, film grain).
-* `PIXABAY_API_KEY` - For the AI Music Supervisor to fetch dynamic background scores.
+* `PEXELS_API_KEY` - For cinematic atmospheric overlays (dust, rain, tactile film burns).
+* `PIXABAY_API_KEY` - For the AI Music Supervisor to fetch dynamic background scores and micro-foley SFX.
 
 **Social Distribution:**
 * `YOUTUBE_TOKEN_JSON` - Authorized OAuth token JSON for automated uploading.
@@ -117,10 +122,10 @@ For GitHub Actions (or your `.env` file) to run the pipeline successfully, ensur
 
 ## 📂 Repository Structure
 * `.github/workflows/` - YAML configuration for the automated CI/CD pipeline.
-* `music/` & `sfx/` - Fallback directories for background tracks and cinematic stingers.
-* `main.py` - Core execution script orchestrating the rendering, rendering, and compositing.
+* `music/` & `sfx/` - Fallback directories for background tracks and cinematic stingers (whooshes, tape clicks).
+* `main.py` - Core execution script orchestrating the rendering, visual pacing, and compositing.
 * `meta_upload.py` - Dedicated module with resilient API bridging for Meta platforms.
-* `neural_voice.py` - Manages the TTS engine, dynamic voice casting, and the 5-stage mastering chain.
+* `neural_voice.py` - Manages the Google Studio TTS engine, dynamic voice casting, and the 5-stage mastering chain.
 * `topics.txt` - The bot's memory bank to prevent duplicating cases.
 
 ## 📝 License
