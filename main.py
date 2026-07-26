@@ -1,12 +1,13 @@
 """
-COLD CASE ARCHIVE — Automated Documentary Pipeline v3.4 (Tactile B-Roll Upgrade)
+COLD CASE ARCHIVE — Automated Documentary Pipeline v3.5 (The Kinetic Upgrade)
 ========================================================================================
-Upgrades vs v3.3:
+Upgrades vs v3.4:
   1. Dynamic Visual Pacing — Shot durations match individual audio line durations.
   2. Seamless Loop Architecture — Removed static end screen for algorithmic replay.
   3. Audio Ducking (Tape Stop) — Dynamically drops background music before key reveals.
-  4. Advanced B-Roll Texturing — Injects 0.5s full-screen tactile stock video flashes 
-     (film burns, macro scratches) precisely on dialogue cuts to reset visual palate.
+  4. Advanced B-Roll Texturing — Tactile stock flashes precisely on dialogue cuts.
+  5. Kinetic Subtitles — Dual-pass rendering adds After Effects-style optical glow 
+     and high-contrast typography to the active spoken word.
 """
 
 import os, random, time, json, glob, math, base64, urllib.parse, re
@@ -1284,7 +1285,7 @@ def add_stinger_sfx(audio_clip, text: str):
 
 
 # ═══════════════════════════════════════════════════════════
-#  NETFLIX KARAOKE SUBTITLE SYSTEM
+#  NETFLIX KARAOKE SUBTITLE SYSTEM (KINETIC UPGRADE)
 # ═══════════════════════════════════════════════════════════
 def get_subtitle_font(size: int = 60):
     candidates = [
@@ -1309,9 +1310,16 @@ def make_karaoke_frame(
     active_idx: int,
     video_width: int
 ) -> PIL.Image.Image:
+    """
+    Renders a transparent (RGBA) PIL frame with a multi-pass compositing system.
+    Generates a heavy neon optical glow behind the active word.
+    """
     frame_h = 160
     img = PIL.Image.new("RGBA", (video_width, frame_h), (0, 0, 0, 0))
+    glow_layer = PIL.Image.new("RGBA", (video_width, frame_h), (0, 0, 0, 0))
+    
     draw = PIL.ImageDraw.Draw(img)
+    glow_draw = PIL.ImageDraw.Draw(glow_layer)
 
     norm_size = 54
     act_size = 68
@@ -1341,11 +1349,41 @@ def make_karaoke_frame(
 
     x = (video_width - total_w) // 2
 
+    # ── PASS 1: Generate the Optical Glow Layer ──
+    temp_x = x
+    for i, w in enumerate(words):
+        is_active = (i == active_idx)
+        if is_active:
+            fn = fn_active
+            bbox = glow_draw.textbbox((0, 0), w["word"], font=fn)
+            text_h = bbox[3] - bbox[1]
+            y = (frame_h - text_h) // 2
+            
+            # Draw an oversized, thick stroke in pure neon yellow
+            glow_draw.text(
+                (temp_x, y), 
+                w["word"], 
+                font=fn, 
+                fill=(255, 230, 0, 255), 
+                stroke_width=10, 
+                stroke_fill=(255, 200, 0, 255)
+            )
+        temp_x += widths[i]
+
+    # Apply intense Gaussian Blur to diffuse the yellow text into a true glow
+    glow_layer = glow_layer.filter(PIL.ImageFilter.GaussianBlur(radius=7))
+    
+    # Flatten the glow onto the main transparent frame
+    img = PIL.Image.alpha_composite(img, glow_layer)
+    draw = PIL.ImageDraw.Draw(img) # Re-init drawer onto the newly composited image
+
+    # ── PASS 2: Render the Core Typography ──
     for i, w in enumerate(words):
         is_active = (i == active_idx)
         fn = fn_active if is_active else fn_normal
         
-        fill = (255, 230, 0, 255) if is_active else (255, 255, 255, 210)
+        # Active text punches hard in stark white; inactive text is pushed back via opacity
+        fill = (255, 255, 255, 255) if is_active else (255, 255, 255, 170)
         
         bbox = draw.textbbox((0, 0), w["word"], font=fn)
         text_h = bbox[3] - bbox[1]
@@ -1357,7 +1395,7 @@ def make_karaoke_frame(
             w["word"], 
             font=fn, 
             fill=fill, 
-            stroke_width=5 if is_active else 3, 
+            stroke_width=4 if is_active else 3, 
             stroke_fill=(0, 0, 0, 255)
         )
         
@@ -1735,14 +1773,12 @@ def main_pipeline() -> tuple:
     )
     first_image_path = "temp_img_0.jpg"
 
-    # Track absolute timestamps of dialogue cuts to overlay textural flashes
     cut_times = []
     acc_time = 0.0
     for i in range(len(audio_clips) - 1):
         acc_time += audio_clips[i].duration
         cut_times.append(acc_time)
 
-    # Pre-fetch 2 highly textural stock videos for transition flashes
     flash_pool = []
     for i in range(2):
         fname = f"temp_flash_{i}.mp4"
@@ -1779,7 +1815,7 @@ def main_pipeline() -> tuple:
                 visual_clips, method="compose", padding=-CROSSFADE_DUR
             )
             .set_duration(master_voice.duration)
-            .fx(colorx, 0.85) # High contrast grade applied to base sequence
+            .fx(colorx, 0.85) 
         )
 
         if fetch_atmospheric_b_roll(master_voice.duration):
@@ -1797,7 +1833,6 @@ def main_pipeline() -> tuple:
             except Exception as e:
                 print(f"⚠️  Atmospheric overlay: {e}")
 
-        # 🎞️ DYNAMIC TACTILE B-ROLL FLASHES OVER CUTS
         flash_clips = []
         if flash_pool:
             FLASH_DUR = 0.5
@@ -1805,7 +1840,6 @@ def main_pipeline() -> tuple:
                 src = random.choice(flash_pool)
                 try:
                     src_clip = VideoFileClip(src).without_audio()
-                    # Grab a random subclip so the same texture video looks different every time
                     if src_clip.duration > FLASH_DUR + 0.2:
                         start_t = random.uniform(0, src_clip.duration - FLASH_DUR)
                         f_clip = src_clip.subclip(start_t, start_t + FLASH_DUR)
@@ -1821,7 +1855,6 @@ def main_pipeline() -> tuple:
                             width=VIDEO_WIDTH, height=VIDEO_HEIGHT
                         )
                     
-                    # Exact placement over the seam, with a micro fade to kill harsh rendering artifacts
                     f_clip = (f_clip
                               .set_start(max(0, ct - FLASH_DUR/2))
                               .set_duration(FLASH_DUR)
@@ -1831,7 +1864,6 @@ def main_pipeline() -> tuple:
                 except Exception as e:
                     print(f"⚠️ Flash processing error: {e}")
         
-        # Apply the flashes on top of the atmospheric overlay to keep them bright
         if flash_clips:
             final_video = CompositeVideoClip([final_video] + flash_clips)
 
@@ -1893,7 +1925,6 @@ def main_pipeline() -> tuple:
         thumbnail_path = generate_thumbnail(case_name, first_image_path)
 
     try:
-        # NOTE: glob.glob("temp_*.mp4") inherently cleans up temp_flash_X.mp4 files generated above
         for f in (glob.glob("temp_*.wav") + glob.glob("temp_*.jpg")
                   + glob.glob("temp_*.mp4") + glob.glob("temp_*.mp3")):
             if f != output_file:
