@@ -1,15 +1,17 @@
 """
-COLD CASE ARCHIVE — Automated Documentary Pipeline v3.7 (Micro-Foley Upgrade)
+COLD CASE ARCHIVE — Automated Documentary Pipeline v3.8 (Pacing & Audio Failsafes)
 ========================================================================================
-Upgrades vs v3.6:
-  1. Dynamic Visual Pacing — Shot durations match individual audio line durations.
-  2. Seamless Loop Architecture — Removed static end screen for algorithmic replay.
-  3. Audio Ducking (Tape Stop) — Dynamically drops background music before key reveals.
-  4. Advanced B-Roll Texturing — Tactile stock flashes precisely on dialogue cuts.
-  5. Kinetic Subtitles — Dual-pass rendering with optical yellow/white glow.
-  6. First-Person Detective Persona — Rewrote script engine to eliminate Wiki tone.
-  7. "Pause-Bait" Micro-Clues — Injects 0.35s hyper-detailed evidence flashes.
-  8. Cut-Triggered Micro-Foley — Injects subtle whooshes/clicks precisely on visual cuts.
+Upgrades vs v3.7:
+  1. Dynamic Script Splitting — Safely breaks long paragraphs into short visual cuts.
+  2. Audio Assembly Failsafes — Prevents 500 TTS errors from rendering dead air.
+  3. Dynamic Visual Pacing — Shot durations match individual audio line durations.
+  4. Seamless Loop Architecture — Removed static end screen for algorithmic replay.
+  5. Audio Ducking (Tape Stop) — Dynamically drops background music before key reveals.
+  6. Advanced B-Roll Texturing — Tactile stock flashes precisely on dialogue cuts.
+  7. Kinetic Subtitles — Dual-pass rendering with optical yellow/white glow.
+  8. First-Person Detective Persona — Rewrote script engine to eliminate Wiki tone.
+  9. "Pause-Bait" Micro-Clues — Injects 0.35s hyper-detailed evidence flashes.
+  10. Cut-Triggered Micro-Foley — Injects subtle whooshes/clicks precisely on visual cuts.
 """
 
 import os, random, time, json, glob, math, base64, urllib.parse, re
@@ -634,10 +636,10 @@ Use "speaker" field to assign each line one of these voices:
 Use each voice at least once.
 
 ━━━━ SSML ACTING TAGS ━━━━ (inside acting_text only — never in clean_text)
-  <break time="1s"/>                       pause before a reveal
+  <break time="1s"/>                        pause before a reveal
   <emphasis level="strong">WORD</emphasis> hit the word hard without shouting
-  <prosody rate="slow" pitch="-15%">       maximum dread, slower delivery
-  <prosody rate="fast">                    rapid factual escalation
+  <prosody rate="slow" pitch="-15%">        maximum dread, slower delivery
+  <prosody rate="fast">                     rapid factual escalation
 
 ━━━━ BANNED CLICHÉS ━━━━
 "Dive into" / "chilling reminder" / "Some say" / "Will we ever know?" / "Buckle up" / "In the annals of history"
@@ -1005,7 +1007,7 @@ def apply_diegetic_matting(filename: str) -> bool:
                 ox = (tw - img.width)  // 2
                 oy = (th - img.height) // 2
                 bg.paste(shadow, (ox + 15, oy + 15), shadow)
-                bg.paste(img,    (ox, oy),            img)
+                bg.paste(img,    (ox, oy),             img)
 
             elif style == "evidence_board":
                 img.thumbnail((540, 720), PIL.Image.Resampling.LANCZOS)
@@ -1708,6 +1710,24 @@ def main_pipeline() -> tuple:
     case_name = script.get("case_name", "Unknown Case")
     base_voice = script.get("recommended_voice_model", "Charon")
 
+    # ══ PHASE 1.5: DYNAMIC SCRIPT SPLITTING (PACING FIX) ══
+    print("✂️  Dynamically splitting script to ensure fast camera cuts...")
+    expanded_lines = []
+    for line in script["lines"]:
+        text = line.get("clean_text", "")
+        # If a thought is longer than 20 words, split it to force a camera cut
+        if len(text.split()) > 20:
+            sentences = re.split(r'(?<=[.!?]) +', text)
+            for sent in sentences:
+                if sent.strip():
+                    new_line = dict(line)
+                    new_line["clean_text"] = sent.strip()
+                    new_line["acting_text"] = sent.strip()
+                    expanded_lines.append(new_line)
+        else:
+            expanded_lines.append(line)
+    script["lines"] = expanded_lines
+
     # ══ PHASE 2: MULTI-VOICE AUDIO ASSEMBLY ══
     audio_clips     = []
     stinger_clips   = []
@@ -1730,28 +1750,36 @@ def main_pipeline() -> tuple:
 
         wav = voice_engine.generate_acting_line(acting_text, clean_text, style, i, voice_name)
         if wav:
-            clip = AudioFileClip(wav)
-            clip = add_sfx(clip, clean_text)
-            
-            text_l = clean_text.lower()
-            for kw, sfx_file in STINGER_MAP.items():
-                if kw in text_l:
-                    path = os.path.join("sfx", sfx_file)
-                    if os.path.exists(path):
-                        try:
-                            stinger_start = current_time + min(0.3, max(0.0, clip.duration - 0.6))
-                            stinger = (AudioFileClip(path)
-                                       .volumex(0.38)
-                                       .set_start(stinger_start))
-                            stinger_clips.append(stinger)
-                        except Exception: pass
-                    break 
+            try:
+                clip = AudioFileClip(wav)
+                
+                # SAFETY CHECK: Prevent empty/corrupt audio clips from breaking math
+                if clip.duration > 0.1:
+                    clip = add_sfx(clip, clean_text)
+                    
+                    text_l = clean_text.lower()
+                    for kw, sfx_file in STINGER_MAP.items():
+                        if kw in text_l:
+                            path = os.path.join("sfx", sfx_file)
+                            if os.path.exists(path):
+                                try:
+                                    stinger_start = current_time + min(0.3, max(0.0, clip.duration - 0.6))
+                                    stinger = (AudioFileClip(path)
+                                               .volumex(0.38)
+                                               .set_start(stinger_start))
+                                    stinger_clips.append(stinger)
+                                except Exception: pass
+                            break 
 
-            audio_clips.append(clip)
-            current_time += clip.duration
+                    audio_clips.append(clip)
+                    current_time += clip.duration
+                else:
+                    print(f"⚠️  Skipping audio {i}: Clip duration too short ({clip.duration}s)")
+            except Exception as e:
+                print(f"⚠️  Failed to load audio clip {i}: {e}")
 
     if not audio_clips:
-        print("❌ No audio clips generated.")
+        print("❌ All audio generation failed. Aborting to prevent dead air.")
         return None, None, None, None, None
 
     # ══ PHASE 3: VISUAL PIPELINE (DYNAMIC BEAT-MATCHED PACING) ══
